@@ -37,6 +37,8 @@ Application :: struct {
     index_buffer : vk.Buffer,
     index_buffer_memory : vk.DeviceMemory,
 
+    textures : [2]VulkanTexture,
+
     uniform_buffers : [1]vk.Buffer,
     uniform_buffers_memory : [1]vk.DeviceMemory,
     uniform_buffers_mapped : [1]rawptr,
@@ -49,13 +51,21 @@ Application :: struct {
     render_finished_semaphore : vk.Semaphore,
 }
 
+VulkanTexture :: struct {
+    t_image : vk.Image,
+    t_memory : vk.DeviceMemory,
+    t_image_view : vk.ImageView,
+    t_sampler : vk.Sampler,
+}
+
 Vertex :: struct {
-    pos : glsl.vec2,
+    pos : glsl.vec3,
     color : glsl.vec3,
+    tex_coords : glsl.vec2,
 }
 
 GlobalTransformUBO :: struct {
-    model : glsl.vec4,
-    view : glsl.vec4,
-    proj : glsl.vec4,
+    model : glsl.mat4,
+    view : glsl.mat4,
+    proj : glsl.mat4,
 }

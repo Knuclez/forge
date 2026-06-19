@@ -2,7 +2,7 @@ package testsito
 
 import "core:fmt"
 import "core:os"
-//import "core:image/jpeg"
+import "core:image/jpeg"
 import "core:image/png"
 import "core:mem"
 import "core:time"
@@ -20,6 +20,7 @@ N_VERTEX_ATTRIBUTES :: 3
 N_VERTICES :: 8
 N_INDICES :: 12
 MAX_FRAMES_IN_FLIGHT :: 1
+MAX_TEXTURES :: 2
 
 draw_frame::proc(app : ^Application, elapsed_time : f32){
     vk.WaitForFences(app.device, 1 , &app.in_flight_fence, true, max(u64))
@@ -103,7 +104,8 @@ init_vulkan::proc(app : ^Application) {
     create_render_pass(app)
     prepare_vertex_binding_descriptions(&vertex_binding_descriptions)
     prepare_vertex_attribute_descriptions(&vertex_attribute_descriptions)
-    prepare_descriptor_set_layout(app)
+    prepare_frame_descriptor_set_layout(app)
+    prepare_material_descriptor_set_layout(app)
     create_pipeline(app, &vertex_binding_descriptions, &vertex_attribute_descriptions)
     create_framebuffers(app)
     create_main_command_pool(app)
@@ -112,7 +114,9 @@ init_vulkan::proc(app : ^Application) {
     create_test_texture2(app)
     create_vertex_buffer(app)
     create_index_buffer(app)
-    prepare_UBO_and_descriptor_sets(app)
+    create_global_transform_UBO(app)
+    instantiate_frame_descriptor_sets(app)
+    instantiate_material_descriptor_sets(app)
     create_sync_objects(app)
 }
 
@@ -156,35 +160,48 @@ prepare_vertex_attribute_descriptions::proc(vertex_attribute_descriptions : ^[N_
 }
 
 
-prepare_descriptor_set_layout::proc(app : ^Application){
+prepare_frame_descriptor_set_layout::proc(app : ^Application){
     uniform_buffer_layout_binding : vk.DescriptorSetLayoutBinding
     uniform_buffer_layout_binding.binding = 0
     uniform_buffer_layout_binding.descriptorType = vk.DescriptorType.UNIFORM_BUFFER
     uniform_buffer_layout_binding.descriptorCount = 1
     uniform_buffer_layout_binding.stageFlags = {vk.ShaderStageFlag.VERTEX}
 
-    sampler_layout_binding : vk.DescriptorSetLayoutBinding
-    sampler_layout_binding.binding = 1
-    sampler_layout_binding.descriptorType = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
-    sampler_layout_binding.descriptorCount = 1
-    sampler_layout_binding.pImmutableSamplers = nil
-    sampler_layout_binding.stageFlags = {vk.ShaderStageFlag.FRAGMENT}
-
-    ds_bindings : [2]vk.DescriptorSetLayoutBinding = {uniform_buffer_layout_binding, sampler_layout_binding}
+    ds_bindings : [1]vk.DescriptorSetLayoutBinding = {uniform_buffer_layout_binding}
 
     descriptor_set_layout_info : vk.DescriptorSetLayoutCreateInfo
     descriptor_set_layout_info.sType = vk.StructureType.DESCRIPTOR_SET_LAYOUT_CREATE_INFO
-    descriptor_set_layout_info.bindingCount = 2
+    descriptor_set_layout_info.bindingCount = 1
     descriptor_set_layout_info.pBindings = raw_data(&ds_bindings)
-    res := vk.CreateDescriptorSetLayout(app.device, &descriptor_set_layout_info, nil, &app.descriptor_set_layout)
+    res := vk.CreateDescriptorSetLayout(app.device, &descriptor_set_layout_info, nil, &app.frame_descriptor_set_layout)
     if res != vk.Result.SUCCESS {
 	fmt.println("Error creating/preparint descriptor_set_layout")
     }
 }
 
 
-prepare_UBO_and_descriptor_sets::proc(app : ^Application){
-    //Create UBOs
+prepare_material_descriptor_set_layout::proc(app : ^Application){
+    sampler_layout_binding : vk.DescriptorSetLayoutBinding
+    sampler_layout_binding.binding = 0
+    sampler_layout_binding.descriptorType = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
+    sampler_layout_binding.descriptorCount = 1
+    sampler_layout_binding.pImmutableSamplers = nil
+    sampler_layout_binding.stageFlags = {vk.ShaderStageFlag.FRAGMENT}
+
+    ds_bindings : [1]vk.DescriptorSetLayoutBinding = {sampler_layout_binding}
+
+    descriptor_set_layout_info : vk.DescriptorSetLayoutCreateInfo
+    descriptor_set_layout_info.sType = vk.StructureType.DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+    descriptor_set_layout_info.bindingCount = 1
+    descriptor_set_layout_info.pBindings = raw_data(&ds_bindings)
+    res := vk.CreateDescriptorSetLayout(app.device, &descriptor_set_layout_info, nil, &app.material_descriptor_set_layout)
+    if res != vk.Result.SUCCESS {
+	fmt.println("Error creating/preparint material_descriptor_set_layout")
+    }
+}
+
+
+create_global_transform_UBO::proc(app : ^Application){
     size : vk.DeviceSize= size_of(GlobalTransformUBO)
     buffer_create_info : vk.BufferCreateInfo
     buffer_create_info.sType = vk.StructureType.BUFFER_CREATE_INFO
@@ -196,32 +213,32 @@ prepare_UBO_and_descriptor_sets::proc(app : ^Application){
     create_vk_buffer(app, &app.uniform_buffers[0], &buffer_create_info, &app.uniform_buffers_memory[0], property_flags)
 
     vk.MapMemory(app.device, app.uniform_buffers_memory[0], 0, size, {}, &app.uniform_buffers_mapped[0])
+}
 
+instantiate_frame_descriptor_sets::proc(app : ^Application){
     //Create descriptor_pool (we have the UBO and the sampler for texture so size 2)
-    descriptor_pool_sizes : [2]vk.DescriptorPoolSize
+    descriptor_pool_sizes : [1]vk.DescriptorPoolSize
     descriptor_pool_sizes[0].type = vk.DescriptorType.UNIFORM_BUFFER
     descriptor_pool_sizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT
-    descriptor_pool_sizes[1].type = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
-    descriptor_pool_sizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT
 
     descriptor_pool_create_info : vk.DescriptorPoolCreateInfo
     descriptor_pool_create_info.sType = vk.StructureType.DESCRIPTOR_POOL_CREATE_INFO
-    descriptor_pool_create_info.poolSizeCount = 2
+    descriptor_pool_create_info.poolSizeCount = 1
     descriptor_pool_create_info.pPoolSizes = raw_data(&descriptor_pool_sizes)
     descriptor_pool_create_info.maxSets = u32(MAX_FRAMES_IN_FLIGHT)
 
-    if vk.CreateDescriptorPool(app.device, &descriptor_pool_create_info, nil, &app.descriptor_pool) != vk.Result.SUCCESS {
+    if vk.CreateDescriptorPool(app.device, &descriptor_pool_create_info, nil, &app.frame_descriptor_pool) != vk.Result.SUCCESS {
 	fmt.println("Error creating descriptor pool")
     }
 
     //Create descriptor_sets
     descriptor_allocation_info : vk.DescriptorSetAllocateInfo
     descriptor_allocation_info.sType = vk.StructureType.DESCRIPTOR_SET_ALLOCATE_INFO
-    descriptor_allocation_info.descriptorPool = app.descriptor_pool
+    descriptor_allocation_info.descriptorPool = app.frame_descriptor_pool
     descriptor_allocation_info.descriptorSetCount = 1
-    descriptor_allocation_info.pSetLayouts = &app.descriptor_set_layout
+    descriptor_allocation_info.pSetLayouts = &app.frame_descriptor_set_layout
 
-    if vk.AllocateDescriptorSets(app.device, &descriptor_allocation_info, raw_data(&app.descriptor_sets)) != vk.Result.SUCCESS{
+    if vk.AllocateDescriptorSets(app.device, &descriptor_allocation_info, raw_data(&app.frame_descriptor_sets)) != vk.Result.SUCCESS{
 	fmt.println("Error allocating descriptor_sets")
     }
 
@@ -230,27 +247,76 @@ prepare_UBO_and_descriptor_sets::proc(app : ^Application){
     descriptor_buffer_info.offset = 0
     descriptor_buffer_info.range = size_of(GlobalTransformUBO)
 
-    descriptor_image_info : vk.DescriptorImageInfo
-    descriptor_image_info.imageLayout = vk.ImageLayout.SHADER_READ_ONLY_OPTIMAL
-    descriptor_image_info.imageView = app.textures[0].t_image_view
-    descriptor_image_info.sampler = app.textures[0].t_sampler
 
-    descriptor_writes : [2]vk.WriteDescriptorSet
+    descriptor_writes : [1]vk.WriteDescriptorSet
     descriptor_writes[0].sType = vk.StructureType.WRITE_DESCRIPTOR_SET
-    descriptor_writes[0].dstSet = app.descriptor_sets[0]
+    descriptor_writes[0].dstSet = app.frame_descriptor_sets[0]
     descriptor_writes[0].dstBinding = 0
     descriptor_writes[0].dstArrayElement = 0
     descriptor_writes[0].descriptorType = vk.DescriptorType.UNIFORM_BUFFER
     descriptor_writes[0].descriptorCount = 1
     descriptor_writes[0].pBufferInfo = &descriptor_buffer_info
 
+    vk.UpdateDescriptorSets(app.device, 1, raw_data(&descriptor_writes), 0, nil)
+}
+
+
+
+
+instantiate_material_descriptor_sets::proc(app : ^Application){
+    descriptor_pool_sizes : [1]vk.DescriptorPoolSize
+    descriptor_pool_sizes[0].type = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
+    descriptor_pool_sizes[0].descriptorCount = MAX_TEXTURES 
+
+    descriptor_pool_create_info : vk.DescriptorPoolCreateInfo
+    descriptor_pool_create_info.sType = vk.StructureType.DESCRIPTOR_POOL_CREATE_INFO
+    descriptor_pool_create_info.poolSizeCount = 1
+    descriptor_pool_create_info.pPoolSizes = raw_data(&descriptor_pool_sizes)
+    descriptor_pool_create_info.maxSets = u32(MAX_TEXTURES)
+
+    if vk.CreateDescriptorPool(app.device, &descriptor_pool_create_info, nil, &app.material_descriptor_pool) != vk.Result.SUCCESS {
+	fmt.println("Error creating descriptor pool")
+    }
+
+    set_layouts : [2]vk.DescriptorSetLayout = {app.material_descriptor_set_layout, 
+	app.material_descriptor_set_layout}
+    //Create descriptor_sets
+    descriptor_allocation_info : vk.DescriptorSetAllocateInfo
+    descriptor_allocation_info.sType = vk.StructureType.DESCRIPTOR_SET_ALLOCATE_INFO
+    descriptor_allocation_info.descriptorPool = app.material_descriptor_pool
+    descriptor_allocation_info.descriptorSetCount = 2
+    descriptor_allocation_info.pSetLayouts = raw_data(&set_layouts)
+
+    if vk.AllocateDescriptorSets(app.device, &descriptor_allocation_info, raw_data(&app.material_descriptor_sets)) != vk.Result.SUCCESS{
+	fmt.println("Error allocating descriptor_sets")
+    }
+
+    descriptor1_image_info : vk.DescriptorImageInfo
+    descriptor1_image_info.imageLayout = vk.ImageLayout.SHADER_READ_ONLY_OPTIMAL
+    descriptor1_image_info.imageView = app.textures[0].t_image_view
+    descriptor1_image_info.sampler = app.textures[0].t_sampler
+
+    descriptor2_image_info : vk.DescriptorImageInfo
+    descriptor2_image_info.imageLayout = vk.ImageLayout.SHADER_READ_ONLY_OPTIMAL
+    descriptor2_image_info.imageView = app.textures[1].t_image_view
+    descriptor2_image_info.sampler = app.textures[1].t_sampler
+
+    descriptor_writes : [2]vk.WriteDescriptorSet
+    descriptor_writes[0].sType = vk.StructureType.WRITE_DESCRIPTOR_SET
+    descriptor_writes[0].dstSet = app.material_descriptor_sets[0]
+    descriptor_writes[0].dstBinding = 0
+    descriptor_writes[0].dstArrayElement = 0
+    descriptor_writes[0].descriptorType = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
+    descriptor_writes[0].descriptorCount = 1
+    descriptor_writes[0].pImageInfo = &descriptor1_image_info
+
     descriptor_writes[1].sType = vk.StructureType.WRITE_DESCRIPTOR_SET
-    descriptor_writes[1].dstSet = app.descriptor_sets[0]
-    descriptor_writes[1].dstBinding = 1
+    descriptor_writes[1].dstSet = app.material_descriptor_sets[1]
+    descriptor_writes[1].dstBinding = 0
     descriptor_writes[1].dstArrayElement = 0
     descriptor_writes[1].descriptorType = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
     descriptor_writes[1].descriptorCount = 1
-    descriptor_writes[1].pImageInfo = &descriptor_image_info
+    descriptor_writes[1].pImageInfo = &descriptor2_image_info
 
     vk.UpdateDescriptorSets(app.device, 2, raw_data(&descriptor_writes), 0, nil)
 }
@@ -665,10 +731,11 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
 
 
     //pipeline_layout
+    descriptor_set_layouts : [2]vk.DescriptorSetLayout = {app.frame_descriptor_set_layout, app.material_descriptor_set_layout}
     pipeline_layout_info : vk.PipelineLayoutCreateInfo
     pipeline_layout_info.sType = vk.StructureType.PIPELINE_LAYOUT_CREATE_INFO
-    pipeline_layout_info.setLayoutCount = 1
-    pipeline_layout_info.pSetLayouts = &app.descriptor_set_layout
+    pipeline_layout_info.setLayoutCount = 2
+    pipeline_layout_info.pSetLayouts = raw_data(&descriptor_set_layouts)
     pipeline_layout_info.pushConstantRangeCount = 0
     pipeline_layout_info.pPushConstantRanges = nil
     pipeline_layout_res := vk.CreatePipelineLayout(app.device, &pipeline_layout_info, nil,
@@ -852,8 +919,6 @@ create_sync_objects::proc(app : ^Application){
 
 create_test_texture::proc(app : ^Application){
     //1. Load image from file
-    //force_alpha_option :jpeg.Options= jpeg.Options{.alpha_add_if_missing}
-    //img0, err := jpeg.load_from_file("images/texture2.jpg", force_alpha_option)
     img0, err := png.load_from_file("images/texture1.png")
     if err != nil {
         fmt.eprintf("Failed to load image: %v\n", err)
@@ -1095,7 +1160,7 @@ create_test_texture2::proc(app : ^Application){
     sampler_info.sType = vk.StructureType.SAMPLER_CREATE_INFO
     sampler_info.magFilter = vk.Filter.LINEAR
     sampler_info.minFilter = vk.Filter.LINEAR
-    sampler_info.addressModeU = vk.SamplerAddressMode.CLAMP_TO_BORDER
+    sampler_info.addressModeU = vk.SamplerAddressMode.REPEAT
     sampler_info.addressModeV = vk.SamplerAddressMode.REPEAT
     sampler_info.addressModeW = vk.SamplerAddressMode.REPEAT
     sampler_info.anisotropyEnable = false
@@ -1104,8 +1169,6 @@ create_test_texture2::proc(app : ^Application){
     sampler_info.unnormalizedCoordinates = false
     sampler_info.compareEnable = false
     sampler_info.compareOp = vk.CompareOp.ALWAYS
-    sampler_info.mipmapMode = vk.SamplerMipmapMode.LINEAR
-    sampler_info.mipLodBias = f32(0)
     sampler_info.minLod = f32(0)
     sampler_info.maxLod = f32(0)
 
@@ -1149,10 +1212,19 @@ record_draw_command_buffer::proc(app : ^Application, command_buffer : vk.Command
 
     vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
 
+    sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
-	0, 1, raw_data(&app.descriptor_sets), 0, nil)
+	0, 2, raw_data(&sets_to_bind), 0, nil)
 
-    vk.CmdDrawIndexed(command_buffer, N_INDICES, 1, 0, 0, 0)
+    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
+
+    texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
+    //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
+    //entonces puedo reemplazar solo el de las texturas diciendo el indice=1 y cantidad=1
+    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
+	1, 1, raw_data(&texture1_bind), 0, nil)
+
+    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
     vk.CmdEndRenderPass(command_buffer)
     if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
 	fmt.println("Error ending command_buffer_recording")
@@ -1231,7 +1303,6 @@ copy_buffer_to_image::proc(app : ^Application, src_buffer : vk.Buffer, dst_image
 
 
 transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.Format, old_layout : vk.ImageLayout, new_layout : vk.ImageLayout){
-
     src_stage : vk.PipelineStageFlags
     dst_stage : vk.PipelineStageFlags
 
@@ -1243,7 +1314,7 @@ transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.
     barrier.newLayout = new_layout
     barrier.srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED
     barrier.dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED
-    barrier.image = app.textures[0].t_image
+    barrier.image = image
     barrier.subresourceRange.aspectMask = {vk.ImageAspectFlags.COLOR}
     barrier.subresourceRange.baseMipLevel = 0
     barrier.subresourceRange.levelCount = 1
@@ -1327,14 +1398,17 @@ setup_vertices::proc(vertices : ^[N_VERTICES]Vertex){
 
     vertices[4].pos = {f32(-0.1), f32(-0.1), f32(0.5)}
     vertices[4].color = {f32(0), f32(1), f32(0)}
+    vertices[4].tex_coords = {f32(0), f32(0)}
 
     vertices[5].pos = {f32(-0.1), f32(0.4), f32(0.5)}
     vertices[5].color = {f32(0), f32(1), f32(0)}
+    vertices[5].tex_coords = {f32(0), f32(1)}
 
     vertices[6].pos = {f32(0.4), f32(0.4), f32(0.5)}
     vertices[6].color = {f32(0), f32(1), f32(1)}
+    vertices[6].tex_coords = {f32(1), f32(1)}
 
     vertices[7].pos = {f32(0.4), f32(-0.1), f32(0.5)}
     vertices[7].color = {f32(0), f32(1), f32(0)}
-
+    vertices[7].tex_coords = {f32(1), f32(0)}
 }

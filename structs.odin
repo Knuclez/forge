@@ -22,7 +22,6 @@ Application :: struct {
     images : [^]vk.Image,
     image_views : [^]vk.ImageView,
 
-    descriptor_set_layout : vk.DescriptorSetLayout,
 
     render_pass : vk.RenderPass,
     graphics_pipeline_layout : vk.PipelineLayout, 
@@ -43,8 +42,12 @@ Application :: struct {
     uniform_buffers_memory : [1]vk.DeviceMemory,
     uniform_buffers_mapped : [1]rawptr,
 
-    descriptor_pool : vk.DescriptorPool,
-    descriptor_sets : [1]vk.DescriptorSet,
+    frame_descriptor_set_layout : vk.DescriptorSetLayout,
+    frame_descriptor_pool : vk.DescriptorPool,
+    frame_descriptor_sets : [1]vk.DescriptorSet,
+    material_descriptor_set_layout : vk.DescriptorSetLayout,
+    material_descriptor_pool : vk.DescriptorPool,
+    material_descriptor_sets : [2]vk.DescriptorSet, 
 
     in_flight_fence : vk.Fence,
     image_available_semaphore : vk.Semaphore,

@@ -18,9 +18,10 @@ Application :: struct {
     device : vk.Device,
 
     swapchain : vk.SwapchainKHR,
+    swapchain_image_extent : vk.Extent2D,
     image_count : u32,
     images : [^]vk.Image,
-    image_views : [^]vk.ImageView,
+    swapchain_image_views : [^]vk.ImageView,
 
 
     render_pass : vk.RenderPass,

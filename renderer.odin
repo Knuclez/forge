@@ -30,7 +30,8 @@ draw_frame::proc(app : ^Application, elapsed_time : f32){
     vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
 
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
-    record_draw_command_buffer(app, app.draw_command_buffers[image_index], image_index)
+    //record_draw_command_buffer(app, app.draw_command_buffers[image_index], image_index)
+    record_draw_command_buffer_dynamic(app, app.draw_command_buffers[image_index], image_index)
 
     update_global_transform_UBO(app, elapsed_time)
     wait_semaphores : [1]vk.Semaphore = {app.image_available_semaphore}
@@ -323,6 +324,18 @@ instantiate_material_descriptor_sets::proc(app : ^Application){
 
 
 create_instance:: proc(app : ^Application) {
+    //instance_version
+    instance_version : u32
+    vk.EnumerateInstanceVersion(&instance_version)
+    major := vk.API_VERSION_MAJOR(instance_version)
+    minor := vk.API_VERSION_MINOR(instance_version)
+    patch := vk.API_VERSION_PATCH(instance_version)
+    fmt.printf("Vulkan supports v: %d.%d.%d\n", major, minor, patch)
+    if minor < 3 {
+	fmt.println("No code branch for less than api 1.3")
+	return
+    }
+
     instance_extensions_count : u32
     ext_res := sdl2.Vulkan_GetInstanceExtensions(app.window, &instance_extensions_count, nil)
 
@@ -354,7 +367,7 @@ create_instance:: proc(app : ^Application) {
     app_info.applicationVersion = 1
     app_info.pEngineName = "FireOdin"
     app_info.engineVersion = 1
-    app_info.apiVersion = vk.API_VERSION_1_0
+    app_info.apiVersion = instance_version
 
     instance_create_info : vk.InstanceCreateInfo
     instance_create_info.sType = vk.StructureType.INSTANCE_CREATE_INFO
@@ -380,8 +393,6 @@ create_instance:: proc(app : ^Application) {
 
 
 create_logical_device::proc(app : ^Application) { 
-    physical_device : vk.PhysicalDevice = nil
-
     //find amount of compatible GPUs
     ph_device_count : u32 = 0
     vk.EnumeratePhysicalDevices(app.instance, &ph_device_count, nil)
@@ -393,9 +404,15 @@ create_logical_device::proc(app : ^Application) {
     //Retreive compatible GPUs and assign phyisical_device to first compatible device
     ph_devices := make([^]vk.PhysicalDevice, ph_device_count)
     vk.EnumeratePhysicalDevices(app.instance, &ph_device_count, ph_devices)
-    for i in 0..<ph_device_count{
+
+    physical_device : vk.PhysicalDevice 
+    device_features : vk.PhysicalDeviceFeatures2 
+    device_features.sType = vk.StructureType.PHYSICAL_DEVICE_FEATURES_2
+    for i in 0..< ph_device_count{
 	if(physical_device == nil){
 	    physical_device = ph_devices[i]
+	    vk.GetPhysicalDeviceFeatures2(physical_device, &device_features)
+	    //fmt.println(device_features.dynamicRendering)
 	    break
 	}
     } 
@@ -453,8 +470,13 @@ create_logical_device::proc(app : ^Application) {
     device_queue_create_info.queueCount = 1
     device_queue_create_info.pQueuePriorities = &queue_prio
     
+    dynamic_rendering_features : vk.PhysicalDeviceVulkan13Features
+    dynamic_rendering_features.sType = vk.StructureType.PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
+    dynamic_rendering_features.dynamicRendering = true
+
     device_create_info : vk.DeviceCreateInfo
     device_create_info.sType = vk.StructureType.DEVICE_CREATE_INFO
+    device_create_info.pNext = &dynamic_rendering_features
     device_create_info.queueCreateInfoCount = 1
     device_create_info.pQueueCreateInfos = &device_queue_create_info
     device_create_info.enabledExtensionCount = 1
@@ -487,14 +509,16 @@ create_surface::proc(app : ^Application){
 
 
 create_swapchain::proc(app : ^Application) {
+    app.swapchain_image_extent.width = WINDOW_WIDTH
+    app.swapchain_image_extent.height = WINDOW_HEIGHT 
+
     swapchain_create_info : vk.SwapchainCreateInfoKHR
     swapchain_create_info.sType = vk.StructureType.SWAPCHAIN_CREATE_INFO_KHR
     swapchain_create_info.surface = app.surface
     swapchain_create_info.minImageCount = 3
     swapchain_create_info.imageFormat = vk.Format.B8G8R8A8_SRGB
     swapchain_create_info.imageColorSpace = vk.ColorSpaceKHR.SRGB_NONLINEAR
-    swapchain_create_info.imageExtent.width = WINDOW_WIDTH 
-    swapchain_create_info.imageExtent.height = WINDOW_HEIGHT
+    swapchain_create_info.imageExtent = app.swapchain_image_extent 
     swapchain_create_info.imageArrayLayers = 1 
     swapchain_create_info.imageUsage = {vk.ImageUsageFlag.COLOR_ATTACHMENT}
     swapchain_create_info.imageSharingMode = vk.SharingMode.EXCLUSIVE //una query para todas las queues 
@@ -517,7 +541,7 @@ create_swapchain::proc(app : ^Application) {
     vk.GetSwapchainImagesKHR(app.device, app.swapchain, &app.image_count, swapchain_images_arr)
     app.images = swapchain_images_arr
 
-    app.image_views = make([^]vk.ImageView, app.image_count)
+    app.swapchain_image_views = make([^]vk.ImageView, app.image_count)
     for i:u32=0; i < app.image_count; i += 1 {
 	image_view_create_info : vk.ImageViewCreateInfo
 	image_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
@@ -533,7 +557,7 @@ create_swapchain::proc(app : ^Application) {
 	image_view_create_info.subresourceRange.levelCount = 1
 	image_view_create_info.subresourceRange.baseArrayLayer = 0
         image_view_create_info.subresourceRange.layerCount = 1
-	img_view_res : vk.Result = vk.CreateImageView(app.device, &image_view_create_info, nil, &app.image_views[i])
+	img_view_res : vk.Result = vk.CreateImageView(app.device, &image_view_create_info, nil, &app.swapchain_image_views[i])
 
 	if img_view_res != vk.Result.SUCCESS{
 	    fmt.println(img_view_res)
@@ -676,7 +700,7 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
 
     viewport.x = f32(0.0)
     viewport.y = f32(0.0)
-    viewport.width = WINDOW_WIDTH 
+    viewport.width =  WINDOW_WIDTH
     viewport.height = WINDOW_HEIGHT
     viewport.minDepth = f32(0.0)
     viewport.maxDepth = f32(1.0)
@@ -744,10 +768,21 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
 	fmt.println("Error creating graphics_pipeline_layout")
     }
 
+    
+    //info for Dynamic rendering
+    attachment_formats : [1]vk.Format = {vk.Format.B8G8R8A8_SRGB}
+    pipeline_dynamic_render_create : vk.PipelineRenderingCreateInfo
+    pipeline_dynamic_render_create.sType = vk.StructureType.PIPELINE_RENDERING_CREATE_INFO
+    pipeline_dynamic_render_create.pNext = nil
+    pipeline_dynamic_render_create.colorAttachmentCount = 1
+    pipeline_dynamic_render_create.pColorAttachmentFormats = raw_data(&attachment_formats)
+    pipeline_dynamic_render_create.depthAttachmentFormat = vk.Format.UNDEFINED
+    pipeline_dynamic_render_create.stencilAttachmentFormat = vk.Format.UNDEFINED
 
     //grapchis_pipeline
     pipeline_info : vk.GraphicsPipelineCreateInfo
     pipeline_info.sType = vk.StructureType.GRAPHICS_PIPELINE_CREATE_INFO
+    pipeline_info.pNext = &pipeline_dynamic_render_create
     pipeline_info.pVertexInputState = &vertex_input_state_info
     pipeline_info.pInputAssemblyState = &input_assembly_state_info
     pipeline_info.pViewportState = &viewport_state_info
@@ -779,7 +814,7 @@ create_framebuffers::proc(app : ^Application){
     app.framebuffers = fbs
     for i:u32=0; i < app.image_count ; i+=1 {
 	//in this case attachments is only a color one, could be also depth ZumBeispiel
-	attachments :[1]vk.ImageView = {app.image_views[i]}
+	attachments :[1]vk.ImageView = {app.swapchain_image_views[i]}
 
 	framebuffer_info : vk.FramebufferCreateInfo
 	framebuffer_info.sType = vk.StructureType.FRAMEBUFFER_CREATE_INFO
@@ -1226,6 +1261,81 @@ record_draw_command_buffer::proc(app : ^Application, command_buffer : vk.Command
 
     vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
     vk.CmdEndRenderPass(command_buffer)
+    if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
+	fmt.println("Error ending command_buffer_recording")
+    }
+}
+
+
+record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk.CommandBuffer, image_index : u32){
+    comm_buff_begin_info : vk.CommandBufferBeginInfo
+    comm_buff_begin_info.sType = vk.StructureType.COMMAND_BUFFER_BEGIN_INFO
+    comm_buff_begin_info.flags = {vk.CommandBufferUsageFlag.ONE_TIME_SUBMIT}
+    comm_buff_begin_info.pInheritanceInfo = nil
+
+    if vk.BeginCommandBuffer(command_buffer, &comm_buff_begin_info) != vk.Result.SUCCESS {
+	fmt.println("Error when begining command_buffer_record")
+    }
+    /*
+    clear_color: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
+
+    render_pass_begin_info : vk.RenderPassBeginInfo
+    render_pass_begin_info.sType = vk.StructureType.RENDER_PASS_BEGIN_INFO
+    render_pass_begin_info.renderPass = app.render_pass
+    render_pass_begin_info.framebuffer = app.framebuffers[image_index]
+    render_pass_begin_info.renderArea.offset.x = 0
+    render_pass_begin_info.renderArea.offset.y = 0
+    render_pass_begin_info.renderArea.extent.width = WINDOW_WIDTH
+    render_pass_begin_info.renderArea.extent.height = WINDOW_HEIGHT
+    render_pass_begin_info.clearValueCount = 1
+    render_pass_begin_info.pClearValues = &clear_color
+
+    vk.CmdBeginRenderPass(command_buffer, &render_pass_begin_info, vk.SubpassContents.INLINE)
+    */
+    
+    clear_value: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
+
+    color_attachment : vk.RenderingAttachmentInfo
+    color_attachment.sType = vk.StructureType.RENDERING_ATTACHMENT_INFO
+    color_attachment.imageView = app.swapchain_image_views[image_index]
+    color_attachment.imageLayout = vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL
+    color_attachment.loadOp = vk.AttachmentLoadOp.CLEAR
+    color_attachment.storeOp = vk.AttachmentStoreOp.STORE
+    color_attachment.clearValue = clear_value 
+
+    color_attachments : [1]vk.RenderingAttachmentInfo = {color_attachment}
+    rendering_info : vk.RenderingInfo
+    rendering_info.sType = vk.StructureType.RENDERING_INFO
+    rendering_info.renderArea.offset = {0,0}
+    rendering_info.renderArea.extent = app.swapchain_image_extent 
+    rendering_info.layerCount = 1
+    rendering_info.colorAttachmentCount = 1
+    rendering_info.pColorAttachments = raw_data(&color_attachments)
+
+    vk.CmdBeginRendering(command_buffer, &rendering_info)
+
+    vk.CmdBindPipeline(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline)
+
+    vertex_buffers : [1]vk.Buffer = {app.vertex_buffer}
+    offsets : [1]vk.DeviceSize = {0}
+    vk.CmdBindVertexBuffers(command_buffer, 0, 1, raw_data(&vertex_buffers), raw_data(&offsets))
+
+    vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
+
+    sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
+    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
+	0, 2, raw_data(&sets_to_bind), 0, nil)
+
+    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
+
+    texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
+    //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
+    //entonces puedo reemplazar solo el de las texturas diciendo el indice=1 y cantidad=1
+    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
+	1, 1, raw_data(&texture1_bind), 0, nil)
+
+    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
+    vk.CmdEndRendering(command_buffer)
     if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
 	fmt.println("Error ending command_buffer_recording")
     }

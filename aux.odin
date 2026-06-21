@@ -24,3 +24,14 @@ rotate_z_mat4::proc(to_rotate : glsl.mat4, rotation_value: f32) -> glsl.mat4{
     result :glsl.mat4 = rot_mat * to_rotate
     return result
 }
+
+rotate_y_mat4::proc(to_rotate : glsl.mat4, rotation_value: f32) -> glsl.mat4{
+    sin_tita : f32 = glsl.sin(rotation_value)
+    cos_tita : f32 = glsl.cos(rotation_value)
+    rot_mat : glsl.mat4 = {cos_tita, 0, sin_tita, 0,
+			    0, 1, 0, 0,
+			    -sin_tita, 0,cos_tita, 0,
+			    0, 0, 0, 1}
+    result :glsl.mat4 = rot_mat * to_rotate
+    return result
+}

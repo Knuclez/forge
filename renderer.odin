@@ -22,7 +22,7 @@ N_INDICES :: 12
 MAX_FRAMES_IN_FLIGHT :: 1
 MAX_TEXTURES :: 2
 
-draw_frame::proc(app : ^Application, elapsed_time : f32){
+draw_frame::proc(app : ^Application, current_time : f32){
     vk.WaitForFences(app.device, 1 , &app.in_flight_fence, true, max(u64))
     vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
@@ -30,10 +30,9 @@ draw_frame::proc(app : ^Application, elapsed_time : f32){
     vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
 
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
-    //record_draw_command_buffer(app, app.draw_command_buffers[image_index], image_index)
     record_draw_command_buffer_dynamic(app, app.draw_command_buffers[image_index], image_index)
 
-    update_global_transform_UBO(app, elapsed_time)
+    update_global_transform_UBO(app, current_time)
     wait_semaphores : [1]vk.Semaphore = {app.image_available_semaphore}
     wait_stages : [1]vk.PipelineStageFlags = {{vk.PipelineStageFlag.COLOR_ATTACHMENT_OUTPUT}}
 
@@ -64,10 +63,10 @@ draw_frame::proc(app : ^Application, elapsed_time : f32){
     vk.QueuePresentKHR(app.graphics_queue, &present_info)
 }
 
-update_global_transform_UBO::proc(app : ^Application, elapsed_time : f32){
+update_global_transform_UBO::proc(app : ^Application, current_time : f32){
     ubo : GlobalTransformUBO
-    ubo.model = glsl.mat4(1.0)
-    //ubo.model = rotate_z_mat4(glsl.mat4(1.0), elapsed_time)
+    //ubo.model = glsl.mat4(1.0)
+    ubo.model = rotate_y_mat4(glsl.mat4(1.0), current_time/500)
     ubo.view = glsl.mat4(1.0)
     ubo.proj = glsl.mat4(1.0)    
 
@@ -102,37 +101,41 @@ init_vulkan::proc(app : ^Application) {
     create_logical_device(app)
     create_surface(app)
     create_swapchain(app)
-    create_render_pass(app)
     prepare_vertex_binding_descriptions(&vertex_binding_descriptions)
     prepare_vertex_attribute_descriptions(&vertex_attribute_descriptions)
     prepare_frame_descriptor_set_layout(app)
     prepare_material_descriptor_set_layout(app)
-    create_pipeline(app, &vertex_binding_descriptions, &vertex_attribute_descriptions)
-    create_framebuffers(app)
     create_main_command_pool(app)
     create_draw_command_buffers(app)
     create_test_texture(app)
     create_test_texture2(app)
+    create_depth_resources(app)
     create_vertex_buffer(app)
     create_index_buffer(app)
     create_global_transform_UBO(app)
     instantiate_frame_descriptor_sets(app)
     instantiate_material_descriptor_sets(app)
+    create_pipeline(app, &vertex_binding_descriptions, &vertex_attribute_descriptions)
     create_sync_objects(app)
 }
 
 
 clean_up_vulkan::proc(app : ^Application){
+    //sync dinge
     vk.DestroySemaphore(app.device, app.render_finished_semaphore, nil)
     vk.DestroySemaphore(app.device, app.image_available_semaphore, nil)
     vk.DestroyFence(app.device, app.in_flight_fence, nil)
+
+    vk.DestroyImageView(app.device, app.depth_resources.image_view, nil)
+    vk.DestroyImage(app.device, app.depth_resources.image, nil)
+    vk.FreeMemory(app.device, app.depth_resources.memory, nil)
+
     vk.DestroySampler(app.device, app.textures[0].t_sampler, nil)
     vk.DestroyImageView(app.device, app.textures[0].t_image_view, nil)
     vk.DestroyImage(app.device, app.textures[0].t_image, nil)
     vk.FreeMemory(app.device, app.textures[0].t_memory, nil)
     free(app.draw_command_buffers)
-    free(app.framebuffers)
-    free(app.images)
+    free(app.swapchain_images)
 }
 
 
@@ -539,13 +542,13 @@ create_swapchain::proc(app : ^Application) {
     vk.GetSwapchainImagesKHR(app.device, app.swapchain, &app.image_count, nil)
     swapchain_images_arr := make([^]vk.Image, app.image_count)
     vk.GetSwapchainImagesKHR(app.device, app.swapchain, &app.image_count, swapchain_images_arr)
-    app.images = swapchain_images_arr
+    app.swapchain_images = swapchain_images_arr
 
     app.swapchain_image_views = make([^]vk.ImageView, app.image_count)
     for i:u32=0; i < app.image_count; i += 1 {
 	image_view_create_info : vk.ImageViewCreateInfo
 	image_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
-	image_view_create_info.image = app.images[i]
+	image_view_create_info.image = app.swapchain_images[i]
 	image_view_create_info.viewType = vk.ImageViewType.D2
 	image_view_create_info.format = vk.Format.B8G8R8A8_SRGB
 	image_view_create_info.components.r = vk.ComponentSwizzle.IDENTITY
@@ -564,52 +567,6 @@ create_swapchain::proc(app : ^Application) {
 	    fmt.println("Error creating image_view: ", i)
 	}
     } 
-}
-
-
-create_render_pass::proc(app : ^Application) {
-    color_attachment_info : vk.AttachmentDescription
-    color_attachment_info.format = vk.Format.B8G8R8A8_SRGB
-    color_attachment_info.samples = {vk.SampleCountFlag._1}
-    color_attachment_info.loadOp = vk.AttachmentLoadOp.CLEAR
-    color_attachment_info.storeOp = vk.AttachmentStoreOp.STORE
-    color_attachment_info.stencilLoadOp = vk.AttachmentLoadOp.DONT_CARE
-    color_attachment_info.stencilStoreOp = vk.AttachmentStoreOp.DONT_CARE
-    color_attachment_info.initialLayout = vk.ImageLayout.UNDEFINED
-    color_attachment_info.finalLayout = vk.ImageLayout.PRESENT_SRC_KHR
-
-    color_att_ref : vk.AttachmentReference
-    color_att_ref.attachment = 0
-    color_att_ref.layout = vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL
-
-    subpass_description : vk.SubpassDescription
-    subpass_description.pipelineBindPoint = vk.PipelineBindPoint.GRAPHICS
-    subpass_description.colorAttachmentCount = 1
-    subpass_description.pColorAttachments = &color_att_ref
-
-    subpass_dependency_info : vk.SubpassDependency
-    subpass_dependency_info.srcSubpass = vk.SUBPASS_EXTERNAL
-    subpass_dependency_info.dstSubpass = 0
-    subpass_dependency_info.srcStageMask = {vk.PipelineStageFlag.COLOR_ATTACHMENT_OUTPUT}
-    subpass_dependency_info.srcAccessMask = vk.AccessFlags_NONE
-    subpass_dependency_info.dstStageMask = {vk.PipelineStageFlag.COLOR_ATTACHMENT_OUTPUT}
-    subpass_dependency_info.dstAccessMask = {vk.AccessFlag.COLOR_ATTACHMENT_WRITE}
-
-
-    render_pass_create_info : vk.RenderPassCreateInfo
-    render_pass_create_info.sType = vk.StructureType.RENDER_PASS_CREATE_INFO
-    render_pass_create_info.attachmentCount = 1
-    render_pass_create_info.pAttachments = &color_attachment_info
-    render_pass_create_info.subpassCount = 1
-    render_pass_create_info.pSubpasses = &subpass_description
-    render_pass_create_info.dependencyCount = 1
-    render_pass_create_info.pDependencies = &subpass_dependency_info
-
-    render_pass_res : vk.Result = vk.CreateRenderPass(app.device, &render_pass_create_info, nil, &app.render_pass)
-    if render_pass_res != vk.Result.SUCCESS {
-	fmt.println(render_pass_res)
-	fmt.println("Error creating render_pass")
-    }
 }
 
 
@@ -694,28 +651,19 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
     input_assembly_state_info.primitiveRestartEnable = false
 
 
+    dynamic_states : [2]vk.DynamicState = {vk.DynamicState.VIEWPORT,vk.DynamicState.SCISSOR}
+    dynamic_state_info : vk.PipelineDynamicStateCreateInfo
+    dynamic_state_info.sType = vk.StructureType.PIPELINE_DYNAMIC_STATE_CREATE_INFO
+    dynamic_state_info.dynamicStateCount = 2
+    dynamic_state_info.pDynamicStates = raw_data(&dynamic_states)
+
     //viewport_state (where to draw)
-    viewport : vk.Viewport
-    scissor : vk.Rect2D
-
-    viewport.x = f32(0.0)
-    viewport.y = f32(0.0)
-    viewport.width =  WINDOW_WIDTH
-    viewport.height = WINDOW_HEIGHT
-    viewport.minDepth = f32(0.0)
-    viewport.maxDepth = f32(1.0)
-
-    scissor.offset.x = 0
-    scissor.offset.y = 0
-    scissor.extent.width = WINDOW_WIDTH
-    scissor.extent.height = WINDOW_HEIGHT
-
     viewport_state_info : vk.PipelineViewportStateCreateInfo
     viewport_state_info.sType = vk.StructureType.PIPELINE_VIEWPORT_STATE_CREATE_INFO
     viewport_state_info.viewportCount = 1
-    viewport_state_info.pViewports = &viewport
     viewport_state_info.scissorCount = 1
-    viewport_state_info.pScissors = &scissor
+    //viewport_state_info.pViewports = &viewport
+    //viewport_state_info.pScissors = &scissor
 
 
     //rasterization_state (How to convert into pixels)
@@ -753,6 +701,16 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
     color_blend_state_info.attachmentCount = 1
     color_blend_state_info.pAttachments = &color_blend_attachment
 
+    //depth_stencil
+    depth_stencil_state_info : vk.PipelineDepthStencilStateCreateInfo
+    depth_stencil_state_info.sType = vk.StructureType.PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+    depth_stencil_state_info.depthTestEnable = true
+    depth_stencil_state_info.depthWriteEnable = true
+    depth_stencil_state_info.depthCompareOp = vk.CompareOp.LESS
+    depth_stencil_state_info.depthBoundsTestEnable = false
+    depth_stencil_state_info.minDepthBounds = f32(0)
+    depth_stencil_state_info.maxDepthBounds = f32(1)
+    depth_stencil_state_info.stencilTestEnable = false
 
     //pipeline_layout
     descriptor_set_layouts : [2]vk.DescriptorSetLayout = {app.frame_descriptor_set_layout, app.material_descriptor_set_layout}
@@ -776,7 +734,7 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
     pipeline_dynamic_render_create.pNext = nil
     pipeline_dynamic_render_create.colorAttachmentCount = 1
     pipeline_dynamic_render_create.pColorAttachmentFormats = raw_data(&attachment_formats)
-    pipeline_dynamic_render_create.depthAttachmentFormat = vk.Format.UNDEFINED
+    pipeline_dynamic_render_create.depthAttachmentFormat = app.depth_resources.format
     pipeline_dynamic_render_create.stencilAttachmentFormat = vk.Format.UNDEFINED
 
     //grapchis_pipeline
@@ -791,10 +749,11 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
     pipeline_info.pStages = raw_data(shader_stages)
     pipeline_info.pMultisampleState = &multisample_state_info    
     pipeline_info.pColorBlendState = &color_blend_state_info
-    pipeline_info.pDepthStencilState = nil
-    pipeline_info.pDynamicState = nil
+    pipeline_info.pDepthStencilState = &depth_stencil_state_info
+    pipeline_info.pDynamicState = &dynamic_state_info
     pipeline_info.layout = app.graphics_pipeline_layout
-    pipeline_info.renderPass = app.render_pass
+    //pipeline_info.renderPass = app.render_pass //STATIC
+    pipeline_info.renderPass = {}
     pipeline_info.subpass = 0
 
     graphic_pipeline_create_res := vk.CreateGraphicsPipelines(app.device, vk.PipelineCache{},
@@ -806,30 +765,6 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
 
     vk.DestroyShaderModule(app.device, vertex_shader_module, nil)
     vk.DestroyShaderModule(app.device, fragment_shader_module, nil)
-}
-
-
-create_framebuffers::proc(app : ^Application){
-    fbs := make([^]vk.Framebuffer, app.image_count)
-    app.framebuffers = fbs
-    for i:u32=0; i < app.image_count ; i+=1 {
-	//in this case attachments is only a color one, could be also depth ZumBeispiel
-	attachments :[1]vk.ImageView = {app.swapchain_image_views[i]}
-
-	framebuffer_info : vk.FramebufferCreateInfo
-	framebuffer_info.sType = vk.StructureType.FRAMEBUFFER_CREATE_INFO
-	framebuffer_info.renderPass = app.render_pass
-	framebuffer_info.attachmentCount = 1
-	framebuffer_info.pAttachments = raw_data(&attachments)
-	framebuffer_info.width = WINDOW_WIDTH
-	framebuffer_info.height = WINDOW_HEIGHT
-	framebuffer_info.layers = 1
-	
-	res_i := vk.CreateFramebuffer(app.device, &framebuffer_info, nil, &app.framebuffers[i])
-	if res_i != vk.Result.SUCCESS{
-	    fmt.println("Error while creating framebuffer n:",i)
-	}
-    }
 }
 
 
@@ -986,52 +921,11 @@ create_test_texture::proc(app : ^Application){
     intrinsics.mem_copy(data_img0, &img0.pixels.buf[0], img0_size)
     vk.UnmapMemory(app.device, t0_staging_buffer_memory)
 
-    t0_image_create_info : vk.ImageCreateInfo
-    t0_image_create_info.sType = vk.StructureType.IMAGE_CREATE_INFO
-    t0_image_create_info.imageType = vk.ImageType.D2
-    t0_image_create_info.extent.width = u32(img0.width)
-    t0_image_create_info.extent.height = u32(img0.height)
-    t0_image_create_info.extent.depth = 1
-    t0_image_create_info.mipLevels = 1
-    t0_image_create_info.arrayLayers = 1
-    t0_image_create_info.format = vk.Format.R8G8B8A8_SRGB 
-    t0_image_create_info.tiling = vk.ImageTiling.OPTIMAL
-    t0_image_create_info.initialLayout = vk.ImageLayout.UNDEFINED
-    t0_image_create_info.usage = {vk.ImageUsageFlags.TRANSFER_DST,vk.ImageUsageFlags.SAMPLED}
-    t0_image_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
-    t0_image_create_info.samples = {vk.SampleCountFlags._1}
-    t0_image_create_info.flags = {}
+    create_image(app, &app.textures[0].t_image, &app.textures[0].t_memory,
+	{vk.MemoryPropertyFlag.DEVICE_LOCAL},vk.Format.R8G8B8A8_SRGB, u32(img0.width),
+	u32(img0.height),{vk.ImageUsageFlags.TRANSFER_DST,vk.ImageUsageFlags.SAMPLED}, vk.ImageTiling.OPTIMAL)
 
-    vk.CreateImage(app.device, &t0_image_create_info ,nil ,&app.textures[0].t_image)
 
-    //4. Bind memory for texture object
-    t0_mem_requirements : vk.MemoryRequirements
-    vk.GetImageMemoryRequirements(app.device, app.textures[0].t_image, &t0_mem_requirements)
-    t0_mem_property_flags : vk.MemoryPropertyFlags = {vk.MemoryPropertyFlags.DEVICE_LOCAL}
-
-    physical_memory_properties : vk.PhysicalDeviceMemoryProperties
-    vk.GetPhysicalDeviceMemoryProperties(app.physical_device, &physical_memory_properties)
-    t0_memory_type_index : u32 = 0
-    for i : u32 = 0; i < physical_memory_properties.memoryTypeCount; i+= 1 {
-	if (t0_mem_requirements.memoryTypeBits & (1 << i)) != 0 && 
-    (physical_memory_properties.memoryTypes[i].propertyFlags & t0_mem_property_flags) == t0_mem_property_flags {
-
-	    t0_memory_type_index = i
-	    break
-	}
-    }   
-
-    t0_alloc_info : vk.MemoryAllocateInfo
-    t0_alloc_info.sType = vk.StructureType.MEMORY_ALLOCATE_INFO
-    t0_alloc_info.allocationSize = t0_mem_requirements.size
-    t0_alloc_info.memoryTypeIndex = t0_memory_type_index
-
-    if vk.AllocateMemory(app.device, &t0_alloc_info, nil, &app.textures[0].t_memory) != vk.Result.SUCCESS {
-	fmt.println("Error allocating memory for texture 0")
-	return
-    }
-
-    vk.BindImageMemory(app.device, app.textures[0].t_image, app.textures[0].t_memory, 0)
     //5. Upload image pixels to texture object (using a barrer to transition the layout)
     transition_image_layout(app, app.textures[0].t_image, vk.Format.R8G8B8A8_SRGB, vk.ImageLayout.UNDEFINED,
 	vk.ImageLayout.TRANSFER_DST_OPTIMAL)
@@ -1044,20 +938,8 @@ create_test_texture::proc(app : ^Application){
     vk.DestroyBuffer(app.device, t0_staging_buffer, nil)
     vk.FreeMemory(app.device, t0_staging_buffer_memory, nil)
     //6. Create image view
-    t0_img_view_create_info : vk.ImageViewCreateInfo
-    t0_img_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
-    t0_img_view_create_info.image = app.textures[0].t_image
-    t0_img_view_create_info.viewType = vk.ImageViewType.D2
-    t0_img_view_create_info.format = vk.Format.R8G8B8A8_SRGB 
-    t0_img_view_create_info.subresourceRange.aspectMask = {vk.ImageAspectFlag.COLOR}
-    t0_img_view_create_info.subresourceRange.baseMipLevel = 0
-    t0_img_view_create_info.subresourceRange.levelCount = 1
-    t0_img_view_create_info.subresourceRange.baseArrayLayer = 0
-    t0_img_view_create_info.subresourceRange.layerCount = 1
+    create_image_view(app, &app.textures[0].t_image_view, app.textures[0].t_image,vk.Format.R8G8B8A8_SRGB,{vk.ImageAspectFlag.COLOR}) 
 
-    if vk.CreateImageView(app.device,&t0_img_view_create_info, nil, &app.textures[0].t_image_view) != vk.Result.SUCCESS {
-	fmt.println("Error creating img_view for img0")
-    }
     //7. Create sampler obj
     sampler_info : vk.SamplerCreateInfo
     sampler_info.sType = vk.StructureType.SAMPLER_CREATE_INFO
@@ -1118,52 +1000,10 @@ create_test_texture2::proc(app : ^Application){
     intrinsics.mem_copy(data_img0, &img0.pixels.buf[0], img0_size)
     vk.UnmapMemory(app.device, t0_staging_buffer_memory)
 
-    t0_image_create_info : vk.ImageCreateInfo
-    t0_image_create_info.sType = vk.StructureType.IMAGE_CREATE_INFO
-    t0_image_create_info.imageType = vk.ImageType.D2
-    t0_image_create_info.extent.width = u32(img0.width)
-    t0_image_create_info.extent.height = u32(img0.height)
-    t0_image_create_info.extent.depth = 1
-    t0_image_create_info.mipLevels = 1
-    t0_image_create_info.arrayLayers = 1
-    t0_image_create_info.format = vk.Format.R8G8B8A8_SRGB 
-    t0_image_create_info.tiling = vk.ImageTiling.OPTIMAL
-    t0_image_create_info.initialLayout = vk.ImageLayout.UNDEFINED
-    t0_image_create_info.usage = {vk.ImageUsageFlags.TRANSFER_DST,vk.ImageUsageFlags.SAMPLED}
-    t0_image_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
-    t0_image_create_info.samples = {vk.SampleCountFlags._1}
-    t0_image_create_info.flags = {}
+    create_image(app, &app.textures[1].t_image, &app.textures[1].t_memory,
+	{vk.MemoryPropertyFlag.DEVICE_LOCAL},vk.Format.R8G8B8A8_SRGB, u32(img0.width),
+	u32(img0.height),{vk.ImageUsageFlags.TRANSFER_DST,vk.ImageUsageFlags.SAMPLED}, vk.ImageTiling.OPTIMAL)
 
-    vk.CreateImage(app.device, &t0_image_create_info ,nil ,&app.textures[1].t_image)
-
-    //4. Bind memory for texture object
-    t0_mem_requirements : vk.MemoryRequirements
-    vk.GetImageMemoryRequirements(app.device, app.textures[1].t_image, &t0_mem_requirements)
-    t0_mem_property_flags : vk.MemoryPropertyFlags = {vk.MemoryPropertyFlags.DEVICE_LOCAL}
-
-    physical_memory_properties : vk.PhysicalDeviceMemoryProperties
-    vk.GetPhysicalDeviceMemoryProperties(app.physical_device, &physical_memory_properties)
-    t0_memory_type_index : u32 = 0
-    for i : u32 = 0; i < physical_memory_properties.memoryTypeCount; i+= 1 {
-	if (t0_mem_requirements.memoryTypeBits & (1 << i)) != 0 && 
-    (physical_memory_properties.memoryTypes[i].propertyFlags & t0_mem_property_flags) == t0_mem_property_flags {
-
-	    t0_memory_type_index = i
-	    break
-	}
-    }   
-
-    t0_alloc_info : vk.MemoryAllocateInfo
-    t0_alloc_info.sType = vk.StructureType.MEMORY_ALLOCATE_INFO
-    t0_alloc_info.allocationSize = t0_mem_requirements.size
-    t0_alloc_info.memoryTypeIndex = t0_memory_type_index
-
-    if vk.AllocateMemory(app.device, &t0_alloc_info, nil, &app.textures[1].t_memory) != vk.Result.SUCCESS {
-	fmt.println("Error allocating memory for texture 0")
-	return
-    }
-
-    vk.BindImageMemory(app.device, app.textures[1].t_image, app.textures[1].t_memory, 0)
     //5. Upload image pixels to texture object (using a barrer to transition the layout)
     transition_image_layout(app, app.textures[1].t_image, vk.Format.R8G8B8A8_SRGB, vk.ImageLayout.UNDEFINED,
 	vk.ImageLayout.TRANSFER_DST_OPTIMAL)
@@ -1176,20 +1016,7 @@ create_test_texture2::proc(app : ^Application){
     vk.DestroyBuffer(app.device, t0_staging_buffer, nil)
     vk.FreeMemory(app.device, t0_staging_buffer_memory, nil)
     //6. Create image view
-    t0_img_view_create_info : vk.ImageViewCreateInfo
-    t0_img_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
-    t0_img_view_create_info.image = app.textures[1].t_image
-    t0_img_view_create_info.viewType = vk.ImageViewType.D2
-    t0_img_view_create_info.format = vk.Format.R8G8B8A8_SRGB 
-    t0_img_view_create_info.subresourceRange.aspectMask = {vk.ImageAspectFlag.COLOR}
-    t0_img_view_create_info.subresourceRange.baseMipLevel = 0
-    t0_img_view_create_info.subresourceRange.levelCount = 1
-    t0_img_view_create_info.subresourceRange.baseArrayLayer = 0
-    t0_img_view_create_info.subresourceRange.layerCount = 1
-
-    if vk.CreateImageView(app.device,&t0_img_view_create_info, nil, &app.textures[1].t_image_view) != vk.Result.SUCCESS {
-	fmt.println("Error creating img_view for img0")
-    }
+    create_image_view(app, &app.textures[1].t_image_view, app.textures[1].t_image,vk.Format.R8G8B8A8_SRGB,{vk.ImageAspectFlag.COLOR}) 
     //7. Create sampler obj
     sampler_info : vk.SamplerCreateInfo
     sampler_info.sType = vk.StructureType.SAMPLER_CREATE_INFO
@@ -1213,57 +1040,109 @@ create_test_texture2::proc(app : ^Application){
     }
 }
 
+create_depth_resources::proc(app : ^Application){
+    depth_format := find_supported_format(app, {vk.Format.D32_SFLOAT_S8_UINT, vk.Format.D32_SFLOAT,
+	vk.Format.D24_UNORM_S8_UINT}, vk.ImageTiling.OPTIMAL, {vk.FormatFeatureFlag.DEPTH_STENCIL_ATTACHMENT})
+    if depth_format == {}{
+	fmt.println("Error finding depth supported_format")
+    } else {
+	app.depth_resources.format = depth_format
+    }
+
+    
+
+    create_image(app, &app.depth_resources.image, &app.depth_resources.memory,
+	{vk.MemoryPropertyFlag.DEVICE_LOCAL},app.depth_resources.format, app.swapchain_image_extent.width,
+	app.swapchain_image_extent.height,{vk.ImageUsageFlag.DEPTH_STENCIL_ATTACHMENT}, vk.ImageTiling.OPTIMAL)
+
+    create_image_view(app, &app.depth_resources.image_view, app.depth_resources.image,app.depth_resources.format,{vk.ImageAspectFlag.DEPTH}) 
+
+    transition_image_layout(app, app.depth_resources.image, app.depth_resources.format,
+	vk.ImageLayout.UNDEFINED, vk.ImageLayout.DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    
+}
+
 //AUXS
-record_draw_command_buffer::proc(app : ^Application, command_buffer : vk.CommandBuffer, image_index : u32){
-    comm_buff_begin_info : vk.CommandBufferBeginInfo
-    comm_buff_begin_info.sType = vk.StructureType.COMMAND_BUFFER_BEGIN_INFO
-    comm_buff_begin_info.flags = {vk.CommandBufferUsageFlag.ONE_TIME_SUBMIT}
-    comm_buff_begin_info.pInheritanceInfo = nil
+create_image::proc(app :^Application, image : ^vk.Image, image_memory: ^vk.DeviceMemory,
+    mem_property_flags : vk.MemoryPropertyFlags, format : vk.Format, width : u32, height :u32,
+    usage_flags :vk.ImageUsageFlags, tiling: vk.ImageTiling){
+    image_create_info : vk.ImageCreateInfo
+    image_create_info.sType = vk.StructureType.IMAGE_CREATE_INFO
+    image_create_info.imageType = vk.ImageType.D2
+    image_create_info.extent.width = width 
+    image_create_info.extent.height = height
+    image_create_info.extent.depth = 1
+    image_create_info.mipLevels = 1
+    image_create_info.arrayLayers = 1
+    image_create_info.format =  format
+    image_create_info.tiling = tiling
+    image_create_info.initialLayout = vk.ImageLayout.UNDEFINED
+    image_create_info.usage = usage_flags
+    image_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
+    image_create_info.samples = {vk.SampleCountFlags._1}
+    image_create_info.flags = {}
 
-    if vk.BeginCommandBuffer(command_buffer, &comm_buff_begin_info) != vk.Result.SUCCESS {
-	fmt.println("Error when begining command_buffer_record")
+    vk.CreateImage(app.device, &image_create_info ,nil ,image)   
+    
+    mem_requirements : vk.MemoryRequirements
+    vk.GetImageMemoryRequirements(app.device, image^, &mem_requirements)
+
+    physical_memory_properties : vk.PhysicalDeviceMemoryProperties
+    vk.GetPhysicalDeviceMemoryProperties(app.physical_device, &physical_memory_properties)
+    memory_type_index : u32 = 0
+    for i : u32 = 0; i < physical_memory_properties.memoryTypeCount; i+= 1 {
+	if (mem_requirements.memoryTypeBits & (1 << i)) != 0 && 
+    (physical_memory_properties.memoryTypes[i].propertyFlags & mem_property_flags) == mem_property_flags {
+
+	    memory_type_index = i
+	    break
+	}
+    }   
+
+    alloc_info : vk.MemoryAllocateInfo
+    alloc_info.sType = vk.StructureType.MEMORY_ALLOCATE_INFO
+    alloc_info.allocationSize = mem_requirements.size
+    alloc_info.memoryTypeIndex = memory_type_index
+
+    if vk.AllocateMemory(app.device, &alloc_info, nil, image_memory) != vk.Result.SUCCESS {
+	fmt.println("Error allocating memory for texture 0")
+	return
     }
 
-    clear_color: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
+    vk.BindImageMemory(app.device, image^, image_memory^, 0)
 
-    render_pass_begin_info : vk.RenderPassBeginInfo
-    render_pass_begin_info.sType = vk.StructureType.RENDER_PASS_BEGIN_INFO
-    render_pass_begin_info.renderPass = app.render_pass
-    render_pass_begin_info.framebuffer = app.framebuffers[image_index]
-    render_pass_begin_info.renderArea.offset.x = 0
-    render_pass_begin_info.renderArea.offset.y = 0
-    render_pass_begin_info.renderArea.extent.width = WINDOW_WIDTH
-    render_pass_begin_info.renderArea.extent.height = WINDOW_HEIGHT
-    render_pass_begin_info.clearValueCount = 1
-    render_pass_begin_info.pClearValues = &clear_color
+}
 
-    vk.CmdBeginRenderPass(command_buffer, &render_pass_begin_info, vk.SubpassContents.INLINE)
 
-    vk.CmdBindPipeline(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline)
+create_image_view::proc(app :^Application, image_view: ^vk.ImageView, image : vk.Image, format : vk.Format, aspect_flags : vk.ImageAspectFlags){
+    img_view_create_info : vk.ImageViewCreateInfo
+    img_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
+    img_view_create_info.image = image 
+    img_view_create_info.viewType = vk.ImageViewType.D2
+    img_view_create_info.format = format
+    img_view_create_info.subresourceRange.aspectMask = aspect_flags
+    img_view_create_info.subresourceRange.baseMipLevel = 0
+    img_view_create_info.subresourceRange.levelCount = 1
+    img_view_create_info.subresourceRange.baseArrayLayer = 0
+    img_view_create_info.subresourceRange.layerCount = 1
 
-    vertex_buffers : [1]vk.Buffer = {app.vertex_buffer}
-    offsets : [1]vk.DeviceSize = {0}
-    vk.CmdBindVertexBuffers(command_buffer, 0, 1, raw_data(&vertex_buffers), raw_data(&offsets))
-
-    vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
-
-    sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
-    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
-	0, 2, raw_data(&sets_to_bind), 0, nil)
-
-    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
-
-    texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
-    //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
-    //entonces puedo reemplazar solo el de las texturas diciendo el indice=1 y cantidad=1
-    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
-	1, 1, raw_data(&texture1_bind), 0, nil)
-
-    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
-    vk.CmdEndRenderPass(command_buffer)
-    if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
-	fmt.println("Error ending command_buffer_recording")
+    if vk.CreateImageView(app.device,&img_view_create_info, nil, image_view) != vk.Result.SUCCESS {
+	fmt.println("Error creating img_view for img0")
     }
+}
+
+
+find_supported_format::proc(app: ^Application, candidates : []vk.Format, tiling : vk.ImageTiling, features : vk.FormatFeatureFlags) -> vk.Format{
+    for format in candidates {
+	properties : vk.FormatProperties
+	vk.GetPhysicalDeviceFormatProperties(app.physical_device,format,&properties)
+	if (tiling == vk.ImageTiling.LINEAR && (properties.linearTilingFeatures & features) == features) {
+	    return format;
+	} else if (tiling == vk.ImageTiling.OPTIMAL && (properties.optimalTilingFeatures & features) == features) {
+	    return format;
+	}
+    }
+    return {}  
 }
 
 
@@ -1276,23 +1155,9 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
     if vk.BeginCommandBuffer(command_buffer, &comm_buff_begin_info) != vk.Result.SUCCESS {
 	fmt.println("Error when begining command_buffer_record")
     }
-    /*
-    clear_color: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
-
-    render_pass_begin_info : vk.RenderPassBeginInfo
-    render_pass_begin_info.sType = vk.StructureType.RENDER_PASS_BEGIN_INFO
-    render_pass_begin_info.renderPass = app.render_pass
-    render_pass_begin_info.framebuffer = app.framebuffers[image_index]
-    render_pass_begin_info.renderArea.offset.x = 0
-    render_pass_begin_info.renderArea.offset.y = 0
-    render_pass_begin_info.renderArea.extent.width = WINDOW_WIDTH
-    render_pass_begin_info.renderArea.extent.height = WINDOW_HEIGHT
-    render_pass_begin_info.clearValueCount = 1
-    render_pass_begin_info.pClearValues = &clear_color
-
-    vk.CmdBeginRenderPass(command_buffer, &render_pass_begin_info, vk.SubpassContents.INLINE)
-    */
-    
+   
+    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
+	vk.ImageLayout.UNDEFINED, vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL)
     clear_value: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
 
     color_attachment : vk.RenderingAttachmentInfo
@@ -1303,6 +1168,14 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
     color_attachment.storeOp = vk.AttachmentStoreOp.STORE
     color_attachment.clearValue = clear_value 
 
+    depth_attachment : vk.RenderingAttachmentInfo
+    depth_attachment.sType = vk.StructureType.RENDERING_ATTACHMENT_INFO
+    depth_attachment.imageView = app.depth_resources.image_view
+    depth_attachment.imageLayout = vk.ImageLayout.DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    depth_attachment.loadOp = vk.AttachmentLoadOp.CLEAR
+    depth_attachment.storeOp = vk.AttachmentStoreOp.DONT_CARE
+    depth_attachment.clearValue.depthStencil = {depth = 1.0, stencil = 0}
+
     color_attachments : [1]vk.RenderingAttachmentInfo = {color_attachment}
     rendering_info : vk.RenderingInfo
     rendering_info.sType = vk.StructureType.RENDERING_INFO
@@ -1311,6 +1184,7 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
     rendering_info.layerCount = 1
     rendering_info.colorAttachmentCount = 1
     rendering_info.pColorAttachments = raw_data(&color_attachments)
+    rendering_info.pDepthAttachment = &depth_attachment
 
     vk.CmdBeginRendering(command_buffer, &rendering_info)
 
@@ -1322,10 +1196,25 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
 
     vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
 
+    viewport : vk.Viewport
+    viewport.x = f32(0)
+    viewport.y = f32(0)
+    viewport.width = WINDOW_WIDTH
+    viewport.height = WINDOW_HEIGHT
+    viewport.minDepth = f32(0)
+    viewport.maxDepth = f32(1)
+    vk.CmdSetViewport(command_buffer, 0, 1, &viewport)
+
+    scissor : vk.Rect2D
+    scissor.offset.x = 0
+    scissor.offset.y = 0
+    scissor.extent = app.swapchain_image_extent 
+    vk.CmdSetScissor(command_buffer, 0, 1, &scissor)
+
+
     sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	0, 2, raw_data(&sets_to_bind), 0, nil)
-
     vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
 
     texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
@@ -1335,7 +1224,11 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
 	1, 1, raw_data(&texture1_bind), 0, nil)
 
     vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
+
     vk.CmdEndRendering(command_buffer)
+    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
+	vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL, vk.ImageLayout.PRESENT_SRC_KHR)
+
     if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
 	fmt.println("Error ending command_buffer_recording")
     }
@@ -1415,6 +1308,9 @@ copy_buffer_to_image::proc(app : ^Application, src_buffer : vk.Buffer, dst_image
 transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.Format, old_layout : vk.ImageLayout, new_layout : vk.ImageLayout){
     src_stage : vk.PipelineStageFlags
     dst_stage : vk.PipelineStageFlags
+    has_stencil_component : bool = (format == vk.Format.D32_SFLOAT_S8_UINT || 
+				    format == vk.Format.D24_UNORM_S8_UINT)
+    
 
     single_time_command_buffer : vk.CommandBuffer
     begin_single_time_command(app, &single_time_command_buffer)
@@ -1425,25 +1321,57 @@ transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.
     barrier.srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED
     barrier.dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED
     barrier.image = image
-    barrier.subresourceRange.aspectMask = {vk.ImageAspectFlags.COLOR}
     barrier.subresourceRange.baseMipLevel = 0
     barrier.subresourceRange.levelCount = 1
     barrier.subresourceRange.baseArrayLayer = 0
     barrier.subresourceRange.layerCount = 1
     barrier.srcAccessMask = {}
     barrier.dstAccessMask = {}
+    
+    //modifiy barrier according color / depth
+    if new_layout == vk.ImageLayout.DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+	barrier.subresourceRange.aspectMask = {vk.ImageAspectFlags.DEPTH}
+	if has_stencil_component {
+	    barrier.subresourceRange.aspectMask |= {vk.ImageAspectFlags.STENCIL}
+	}
+    } else {
+	barrier.subresourceRange.aspectMask = {vk.ImageAspectFlags.COLOR}
+    }
 
+    //
     if old_layout == vk.ImageLayout.UNDEFINED && new_layout == vk.ImageLayout.TRANSFER_DST_OPTIMAL {
 	barrier.srcAccessMask = {}
 	barrier.dstAccessMask = {vk.AccessFlags.TRANSFER_WRITE}
 	src_stage = {vk.PipelineStageFlags.TOP_OF_PIPE}
 	dst_stage = {vk.PipelineStageFlags.TRANSFER}
+
+    } else if old_layout == vk.ImageLayout.UNDEFINED &&	new_layout == vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL{
+	barrier.srcAccessMask = {}
+	barrier.dstAccessMask = {vk.AccessFlags.COLOR_ATTACHMENT_WRITE}
+	src_stage = {vk.PipelineStageFlags.TOP_OF_PIPE}
+	dst_stage = {vk.PipelineStageFlags.COLOR_ATTACHMENT_OUTPUT}
+
+    } else if old_layout == vk.ImageLayout.UNDEFINED &&	new_layout == vk.ImageLayout.DEPTH_STENCIL_ATTACHMENT_OPTIMAL{
+	
+	barrier.srcAccessMask = {}
+	barrier.dstAccessMask = {vk.AccessFlags.DEPTH_STENCIL_ATTACHMENT_WRITE,vk.AccessFlags.DEPTH_STENCIL_ATTACHMENT_READ}
+	src_stage = {vk.PipelineStageFlags.TOP_OF_PIPE}
+	dst_stage = {vk.PipelineStageFlags.EARLY_FRAGMENT_TESTS}
+
     } else if old_layout == vk.ImageLayout.TRANSFER_DST_OPTIMAL &&
 		new_layout == vk.ImageLayout.SHADER_READ_ONLY_OPTIMAL{
 	barrier.srcAccessMask = {vk.AccessFlags.TRANSFER_WRITE}
 	barrier.dstAccessMask = {vk.AccessFlags.SHADER_READ}
 	src_stage = {vk.PipelineStageFlags.TRANSFER}
 	dst_stage = {vk.PipelineStageFlags.FRAGMENT_SHADER}
+
+    } else if old_layout == vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL &&
+		new_layout == vk.ImageLayout.PRESENT_SRC_KHR{
+	barrier.srcAccessMask = {vk.AccessFlags.COLOR_ATTACHMENT_WRITE}
+	barrier.dstAccessMask = {}
+	src_stage = {vk.PipelineStageFlags.COLOR_ATTACHMENT_OUTPUT}
+	dst_stage = {vk.PipelineStageFlags.BOTTOM_OF_PIPE}
+
     } else {
 	fmt.println("Image layout transition not supported")
 	return

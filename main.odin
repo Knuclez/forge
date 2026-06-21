@@ -22,7 +22,7 @@ main::proc() {
 	delta : f32 = f32(elapsed_time) / f32(1000)
 	process_input(&looping)
 	if !looping { break }
-	draw_frame(&app, f32(elapsed_time))
+	draw_frame(&app, f32(current_time))
 
 	frame_time :u32 = sdl2.GetTicks() - current_time
 	if frame_time < FRAME_TIME {

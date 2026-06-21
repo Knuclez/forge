@@ -20,15 +20,13 @@ Application :: struct {
     swapchain : vk.SwapchainKHR,
     swapchain_image_extent : vk.Extent2D,
     image_count : u32,
-    images : [^]vk.Image,
+    swapchain_images : [^]vk.Image,
     swapchain_image_views : [^]vk.ImageView,
 
 
-    render_pass : vk.RenderPass,
     graphics_pipeline_layout : vk.PipelineLayout, 
     graphics_pipeline : vk.Pipeline,
 
-    framebuffers : [^]vk.Framebuffer,
     main_command_pool : vk.CommandPool,
     draw_command_buffers : [^]vk.CommandBuffer,
 
@@ -38,6 +36,7 @@ Application :: struct {
     index_buffer_memory : vk.DeviceMemory,
 
     textures : [2]VulkanTexture,
+    depth_resources : DepthResources,
 
     uniform_buffers : [1]vk.Buffer,
     uniform_buffers_memory : [1]vk.DeviceMemory,
@@ -53,6 +52,13 @@ Application :: struct {
     in_flight_fence : vk.Fence,
     image_available_semaphore : vk.Semaphore,
     render_finished_semaphore : vk.Semaphore,
+}
+
+DepthResources :: struct {
+    image : vk.Image,
+    image_view : vk.ImageView,
+    memory : vk.DeviceMemory,
+    format : vk.Format,
 }
 
 VulkanTexture :: struct {

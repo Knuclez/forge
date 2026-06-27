@@ -18,11 +18,11 @@ FRAGMENT_SHADER_PATH :: "shaders/frag.spv"
 N_VERTEX_BINDINGS :: 1
 N_VERTEX_ATTRIBUTES :: 3
 N_VERTICES :: 8
-N_INDICES :: 12
+N_INDICES :: 36
 MAX_FRAMES_IN_FLIGHT :: 1
 MAX_TEXTURES :: 2
 
-draw_frame::proc(app : ^Application, current_time : f32){
+draw_frame::proc(app : ^vkApplication, current_time : f32){
     vk.WaitForFences(app.device, 1 , &app.in_flight_fence, true, max(u64))
     vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
@@ -63,10 +63,15 @@ draw_frame::proc(app : ^Application, current_time : f32){
     vk.QueuePresentKHR(app.graphics_queue, &present_info)
 }
 
-update_global_transform_UBO::proc(app : ^Application, current_time : f32){
+update_global_transform_UBO::proc(app : ^vkApplication, current_time : f32){
     ubo : GlobalTransformUBO
     //ubo.model = glsl.mat4(1.0)
-    ubo.model = rotate_y_mat4(glsl.mat4(1.0), current_time/500)
+    model_matrix : glsl.mat4 = glsl.mat4(1.0)
+    rotate_y_mat4(&model_matrix, current_time/500)
+    rotate_x_mat4(&model_matrix, -50)
+    translate_z_mat4(&model_matrix, 1)
+    scale_mat4(&model_matrix, 0.5)
+    ubo.model = model_matrix
     ubo.view = glsl.mat4(1.0)
     ubo.proj = glsl.mat4(1.0)    
 
@@ -75,7 +80,7 @@ update_global_transform_UBO::proc(app : ^Application, current_time : f32){
 }
 
 //=========== CREATIONS/INITIALIZATIONS/CLEAN UP ============================================
-init_sdl::proc(app : ^Application){
+init_sdl::proc(app : ^vkApplication){
     res := sdl2.CreateWindow("Titel", 30, 30, WINDOW_WIDTH, WINDOW_HEIGHT, {sdl2.WindowFlag.VULKAN})
     if res == nil{
 	fmt.println("Fallo al crear la ventana en init_sdl")
@@ -85,7 +90,7 @@ init_sdl::proc(app : ^Application){
 }
 
 
-init_vulkan::proc(app : ^Application) {
+init_vulkan::proc(app : ^vkApplication) {
     vk_get_proc_addr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
     if vk_get_proc_addr == nil {
 	fmt.println("Fallo al obtener vkGetInstanceProcAddr")
@@ -120,7 +125,7 @@ init_vulkan::proc(app : ^Application) {
 }
 
 
-clean_up_vulkan::proc(app : ^Application){
+clean_up_vulkan::proc(app : ^vkApplication){
     //sync dinge
     vk.DestroySemaphore(app.device, app.render_finished_semaphore, nil)
     vk.DestroySemaphore(app.device, app.image_available_semaphore, nil)
@@ -164,7 +169,7 @@ prepare_vertex_attribute_descriptions::proc(vertex_attribute_descriptions : ^[N_
 }
 
 
-prepare_frame_descriptor_set_layout::proc(app : ^Application){
+prepare_frame_descriptor_set_layout::proc(app : ^vkApplication){
     uniform_buffer_layout_binding : vk.DescriptorSetLayoutBinding
     uniform_buffer_layout_binding.binding = 0
     uniform_buffer_layout_binding.descriptorType = vk.DescriptorType.UNIFORM_BUFFER
@@ -184,7 +189,7 @@ prepare_frame_descriptor_set_layout::proc(app : ^Application){
 }
 
 
-prepare_material_descriptor_set_layout::proc(app : ^Application){
+prepare_material_descriptor_set_layout::proc(app : ^vkApplication){
     sampler_layout_binding : vk.DescriptorSetLayoutBinding
     sampler_layout_binding.binding = 0
     sampler_layout_binding.descriptorType = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
@@ -205,7 +210,7 @@ prepare_material_descriptor_set_layout::proc(app : ^Application){
 }
 
 
-create_global_transform_UBO::proc(app : ^Application){
+create_global_transform_UBO::proc(app : ^vkApplication){
     size : vk.DeviceSize= size_of(GlobalTransformUBO)
     buffer_create_info : vk.BufferCreateInfo
     buffer_create_info.sType = vk.StructureType.BUFFER_CREATE_INFO
@@ -219,7 +224,7 @@ create_global_transform_UBO::proc(app : ^Application){
     vk.MapMemory(app.device, app.uniform_buffers_memory[0], 0, size, {}, &app.uniform_buffers_mapped[0])
 }
 
-instantiate_frame_descriptor_sets::proc(app : ^Application){
+instantiate_frame_descriptor_sets::proc(app : ^vkApplication){
     //Create descriptor_pool (we have the UBO and the sampler for texture so size 2)
     descriptor_pool_sizes : [1]vk.DescriptorPoolSize
     descriptor_pool_sizes[0].type = vk.DescriptorType.UNIFORM_BUFFER
@@ -267,7 +272,7 @@ instantiate_frame_descriptor_sets::proc(app : ^Application){
 
 
 
-instantiate_material_descriptor_sets::proc(app : ^Application){
+instantiate_material_descriptor_sets::proc(app : ^vkApplication){
     descriptor_pool_sizes : [1]vk.DescriptorPoolSize
     descriptor_pool_sizes[0].type = vk.DescriptorType.COMBINED_IMAGE_SAMPLER
     descriptor_pool_sizes[0].descriptorCount = MAX_TEXTURES 
@@ -326,7 +331,7 @@ instantiate_material_descriptor_sets::proc(app : ^Application){
 }
 
 
-create_instance:: proc(app : ^Application) {
+create_instance:: proc(app : ^vkApplication) {
     //instance_version
     instance_version : u32
     vk.EnumerateInstanceVersion(&instance_version)
@@ -395,7 +400,7 @@ create_instance:: proc(app : ^Application) {
 }
 
 
-create_logical_device::proc(app : ^Application) { 
+create_logical_device::proc(app : ^vkApplication) { 
     //find amount of compatible GPUs
     ph_device_count : u32 = 0
     vk.EnumeratePhysicalDevices(app.instance, &ph_device_count, nil)
@@ -499,7 +504,7 @@ create_logical_device::proc(app : ^Application) {
 }
 
 
-create_surface::proc(app : ^Application){
+create_surface::proc(app : ^vkApplication){
     sfc_res : sdl2.bool = sdl2.Vulkan_CreateSurface(app.window, app.instance, &app.surface)
     if sfc_res == false{
 	fmt.println("Error creating surface with SDL")
@@ -511,7 +516,7 @@ create_surface::proc(app : ^Application){
 }
 
 
-create_swapchain::proc(app : ^Application) {
+create_swapchain::proc(app : ^vkApplication) {
     app.swapchain_image_extent.width = WINDOW_WIDTH
     app.swapchain_image_extent.height = WINDOW_HEIGHT 
 
@@ -570,7 +575,7 @@ create_swapchain::proc(app : ^Application) {
 }
 
 
-create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERTEX_BINDINGS]vk.VertexInputBindingDescription, vertex_attribute_descriptions : ^[N_VERTEX_ATTRIBUTES]vk.VertexInputAttributeDescription){
+create_pipeline::proc(app : ^vkApplication, vertex_binding_descriptions : ^[N_VERTEX_BINDINGS]vk.VertexInputBindingDescription, vertex_attribute_descriptions : ^[N_VERTEX_ATTRIBUTES]vk.VertexInputAttributeDescription){
     //Read vertex files bytes and check alignment
     vertex_shd_bytes, vtx_file_err := os.read_entire_file_from_path(VERTEX_SHADER_PATH, context.allocator)
     if vtx_file_err != nil{
@@ -768,7 +773,7 @@ create_pipeline::proc(app : ^Application, vertex_binding_descriptions : ^[N_VERT
 }
 
 
-create_main_command_pool::proc(app : ^Application){
+create_main_command_pool::proc(app : ^vkApplication){
     command_pool_info : vk.CommandPoolCreateInfo
     command_pool_info.sType = vk.StructureType.COMMAND_POOL_CREATE_INFO
     command_pool_info.queueFamilyIndex = app.graphics_queue_family_index
@@ -781,7 +786,7 @@ create_main_command_pool::proc(app : ^Application){
 }
 
 
-create_draw_command_buffers::proc(app : ^Application){
+create_draw_command_buffers::proc(app : ^vkApplication){
     command_buffer_allocate_info : vk.CommandBufferAllocateInfo
     command_buffer_allocate_info.sType = vk.StructureType.COMMAND_BUFFER_ALLOCATE_INFO
     command_buffer_allocate_info.commandPool = app.main_command_pool
@@ -797,7 +802,7 @@ create_draw_command_buffers::proc(app : ^Application){
 }
 
 
-create_vertex_buffer::proc(app : ^Application){
+create_vertex_buffer::proc(app : ^vkApplication){
     vertices : [N_VERTICES]Vertex
     setup_vertices(&vertices)
    
@@ -832,9 +837,13 @@ create_vertex_buffer::proc(app : ^Application){
 }
 
 
-create_index_buffer::proc(app : ^Application){
+create_index_buffer::proc(app : ^vkApplication){
     indices : [N_INDICES]u16 = {u16(0),u16(1),u16(2),u16(2),u16(3),u16(0),
-				u16(4),u16(5),u16(6),u16(6),u16(7),u16(4)}
+				u16(3),u16(2),u16(4),u16(4),u16(5),u16(3),
+				u16(5),u16(4),u16(6),u16(6),u16(7),u16(5),
+				u16(7),u16(6),u16(1),u16(1),u16(0),u16(7),
+				u16(0),u16(3),u16(5),u16(5),u16(7),u16(0),
+				u16(1),u16(6),u16(4),u16(4),u16(2),u16(1)}
    
     staging_buffer : vk.Buffer
     staging_buffer_memory : vk.DeviceMemory
@@ -867,7 +876,7 @@ create_index_buffer::proc(app : ^Application){
 }
 
 
-create_sync_objects::proc(app : ^Application){
+create_sync_objects::proc(app : ^vkApplication){
     semaphore_info : vk.SemaphoreCreateInfo
     semaphore_info.sType = vk.StructureType.SEMAPHORE_CREATE_INFO
 
@@ -887,7 +896,7 @@ create_sync_objects::proc(app : ^Application){
 }
 
 
-create_test_texture::proc(app : ^Application){
+create_test_texture::proc(app : ^vkApplication){
     //1. Load image from file
     img0, err := png.load_from_file("images/texture1.png")
     if err != nil {
@@ -965,7 +974,7 @@ create_test_texture::proc(app : ^Application){
     }
 }
 
-create_test_texture2::proc(app : ^Application){
+create_test_texture2::proc(app : ^vkApplication){
     //1. Load image from file
     force_alpha_option :jpeg.Options= jpeg.Options{.alpha_add_if_missing}
     img0, err := jpeg.load_from_file("images/texture2.jpg", force_alpha_option)
@@ -1040,7 +1049,7 @@ create_test_texture2::proc(app : ^Application){
     }
 }
 
-create_depth_resources::proc(app : ^Application){
+create_depth_resources::proc(app : ^vkApplication){
     depth_format := find_supported_format(app, {vk.Format.D32_SFLOAT_S8_UINT, vk.Format.D32_SFLOAT,
 	vk.Format.D24_UNORM_S8_UINT}, vk.ImageTiling.OPTIMAL, {vk.FormatFeatureFlag.DEPTH_STENCIL_ATTACHMENT})
     if depth_format == {}{
@@ -1063,7 +1072,7 @@ create_depth_resources::proc(app : ^Application){
 }
 
 //AUXS
-create_image::proc(app :^Application, image : ^vk.Image, image_memory: ^vk.DeviceMemory,
+create_image::proc(app :^vkApplication, image : ^vk.Image, image_memory: ^vk.DeviceMemory,
     mem_property_flags : vk.MemoryPropertyFlags, format : vk.Format, width : u32, height :u32,
     usage_flags :vk.ImageUsageFlags, tiling: vk.ImageTiling){
     image_create_info : vk.ImageCreateInfo
@@ -1114,7 +1123,7 @@ create_image::proc(app :^Application, image : ^vk.Image, image_memory: ^vk.Devic
 }
 
 
-create_image_view::proc(app :^Application, image_view: ^vk.ImageView, image : vk.Image, format : vk.Format, aspect_flags : vk.ImageAspectFlags){
+create_image_view::proc(app :^vkApplication, image_view: ^vk.ImageView, image : vk.Image, format : vk.Format, aspect_flags : vk.ImageAspectFlags){
     img_view_create_info : vk.ImageViewCreateInfo
     img_view_create_info.sType = vk.StructureType.IMAGE_VIEW_CREATE_INFO
     img_view_create_info.image = image 
@@ -1132,7 +1141,7 @@ create_image_view::proc(app :^Application, image_view: ^vk.ImageView, image : vk
 }
 
 
-find_supported_format::proc(app: ^Application, candidates : []vk.Format, tiling : vk.ImageTiling, features : vk.FormatFeatureFlags) -> vk.Format{
+find_supported_format::proc(app: ^vkApplication, candidates : []vk.Format, tiling : vk.ImageTiling, features : vk.FormatFeatureFlags) -> vk.Format{
     for format in candidates {
 	properties : vk.FormatProperties
 	vk.GetPhysicalDeviceFormatProperties(app.physical_device,format,&properties)
@@ -1146,7 +1155,7 @@ find_supported_format::proc(app: ^Application, candidates : []vk.Format, tiling 
 }
 
 
-record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk.CommandBuffer, image_index : u32){
+record_draw_command_buffer_dynamic::proc(app : ^vkApplication, command_buffer : vk.CommandBuffer, image_index : u32){
     comm_buff_begin_info : vk.CommandBufferBeginInfo
     comm_buff_begin_info.sType = vk.StructureType.COMMAND_BUFFER_BEGIN_INFO
     comm_buff_begin_info.flags = {vk.CommandBufferUsageFlag.ONE_TIME_SUBMIT}
@@ -1215,6 +1224,7 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
     sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	0, 2, raw_data(&sets_to_bind), 0, nil)
+
     vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
 
     texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
@@ -1235,7 +1245,7 @@ record_draw_command_buffer_dynamic::proc(app : ^Application, command_buffer : vk
 }
 
 
-create_vk_buffer::proc(app : ^Application, buffer_handle : ^vk.Buffer, buffer_info : ^vk.BufferCreateInfo,
+create_vk_buffer::proc(app : ^vkApplication, buffer_handle : ^vk.Buffer, buffer_info : ^vk.BufferCreateInfo,
     buffer_memory : ^vk.DeviceMemory, mem_property_flags : vk.MemoryPropertyFlags){
     buff_res := vk.CreateBuffer(app.device, buffer_info, nil, buffer_handle)
     if buff_res != vk.Result.SUCCESS {
@@ -1273,7 +1283,7 @@ create_vk_buffer::proc(app : ^Application, buffer_handle : ^vk.Buffer, buffer_in
 }
 
 
-copy_buffer::proc(app : ^Application, src_buffer : vk.Buffer, dst_buffer : vk.Buffer, size : vk.DeviceSize){
+copy_buffer::proc(app : ^vkApplication, src_buffer : vk.Buffer, dst_buffer : vk.Buffer, size : vk.DeviceSize){
     command_buffer : vk.CommandBuffer
     begin_single_time_command(app, &command_buffer)
     copy_region : vk.BufferCopy
@@ -1285,7 +1295,7 @@ copy_buffer::proc(app : ^Application, src_buffer : vk.Buffer, dst_buffer : vk.Bu
 }
 
 
-copy_buffer_to_image::proc(app : ^Application, src_buffer : vk.Buffer, dst_image : vk.Image, width:u32,height:u32){
+copy_buffer_to_image::proc(app : ^vkApplication, src_buffer : vk.Buffer, dst_image : vk.Image, width:u32,height:u32){
     command_buffer : vk.CommandBuffer
     begin_single_time_command(app, &command_buffer)
     
@@ -1305,7 +1315,7 @@ copy_buffer_to_image::proc(app : ^Application, src_buffer : vk.Buffer, dst_image
 }
 
 
-transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.Format, old_layout : vk.ImageLayout, new_layout : vk.ImageLayout){
+transition_image_layout::proc(app : ^vkApplication, image : vk.Image, format : vk.Format, old_layout : vk.ImageLayout, new_layout : vk.ImageLayout){
     src_stage : vk.PipelineStageFlags
     dst_stage : vk.PipelineStageFlags
     has_stencil_component : bool = (format == vk.Format.D32_SFLOAT_S8_UINT || 
@@ -1384,7 +1394,7 @@ transition_image_layout::proc(app : ^Application, image : vk.Image, format : vk.
 }
 
 
-begin_single_time_command::proc(app : ^Application, command_buffer : ^vk.CommandBuffer){
+begin_single_time_command::proc(app : ^vkApplication, command_buffer : ^vk.CommandBuffer){
     allocate_info : vk.CommandBufferAllocateInfo
     allocate_info.sType = vk.StructureType.COMMAND_BUFFER_ALLOCATE_INFO
     allocate_info.level = vk.CommandBufferLevel.PRIMARY
@@ -1401,7 +1411,7 @@ begin_single_time_command::proc(app : ^Application, command_buffer : ^vk.Command
 }
 
 
-end_single_time_command::proc(app: ^Application, command_buffer : ^vk.CommandBuffer){
+end_single_time_command::proc(app: ^vkApplication, command_buffer : ^vk.CommandBuffer){
     vk.EndCommandBuffer(command_buffer^)
 
     submit_info : vk.SubmitInfo
@@ -1417,36 +1427,35 @@ end_single_time_command::proc(app: ^Application, command_buffer : ^vk.CommandBuf
 
 
 setup_vertices::proc(vertices : ^[N_VERTICES]Vertex){
-    vertices[0].pos = {f32(-0.5), f32(-0.5), f32(0.1)}
+    vertices[0].pos = {f32(-0.5), f32(-0.5), f32(-0.5)}
     vertices[0].color = {f32(1), f32(0), f32(0)}
     vertices[0].tex_coords = {f32(0), f32(0)}
 
-    vertices[1].pos = {f32(-0.5), f32(0), f32(0.1)}
+    vertices[1].pos = {f32(-0.5), f32(0.5), f32(-0.5)}
     vertices[1].color = {f32(1), f32(0), f32(0)}
     vertices[1].tex_coords = {f32(0), f32(1)}
 
-    vertices[2].pos = {f32(0), f32(0), f32(0.1)}
+    vertices[2].pos = {f32(0.5), f32(0.5), f32(-0.5)}
     vertices[2].color = {f32(1), f32(0), f32(1)}
     vertices[2].tex_coords = {f32(1), f32(1)}
 
-    vertices[3].pos = {f32(0), f32(-0.5), f32(0.1)}
+    vertices[3].pos = {f32(0.5), f32(-0.5), f32(-0.5)}
     vertices[3].color = {f32(1), f32(0), f32(0)}
     vertices[3].tex_coords = {f32(1), f32(0)}
 
-
-    vertices[4].pos = {f32(-0.1), f32(-0.1), f32(0.5)}
+    vertices[4].pos = {f32(0.5), f32(0.5), f32(0.5)}
     vertices[4].color = {f32(0), f32(1), f32(0)}
     vertices[4].tex_coords = {f32(0), f32(0)}
 
-    vertices[5].pos = {f32(-0.1), f32(0.4), f32(0.5)}
+    vertices[5].pos = {f32(0.5), f32(-0.5), f32(0.5)}
     vertices[5].color = {f32(0), f32(1), f32(0)}
     vertices[5].tex_coords = {f32(0), f32(1)}
 
-    vertices[6].pos = {f32(0.4), f32(0.4), f32(0.5)}
+    vertices[6].pos = {f32(-0.5), f32(0.5), f32(0.5)}
     vertices[6].color = {f32(0), f32(1), f32(1)}
     vertices[6].tex_coords = {f32(1), f32(1)}
 
-    vertices[7].pos = {f32(0.4), f32(-0.1), f32(0.5)}
+    vertices[7].pos = {f32(-0.5), f32(-0.5), f32(0.5)}
     vertices[7].color = {f32(0), f32(1), f32(0)}
     vertices[7].tex_coords = {f32(1), f32(0)}
 }

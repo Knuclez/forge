@@ -4,7 +4,12 @@ import "vendor:sdl2"
 import vk "vendor:vulkan"
 import glsl "core:math/linalg/glsl"
 
-Application :: struct {
+
+Engine :: struct{
+    vulkan_app : vkApplication,
+}
+
+vkApplication :: struct {
     is_debug_mode : bool,
     vk_debug_messenger : vk.DebugUtilsMessengerEXT, 
 

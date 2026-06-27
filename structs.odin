@@ -4,11 +4,22 @@ import "vendor:sdl2"
 import vk "vendor:vulkan"
 import glsl "core:math/linalg/glsl"
 
+N_ENGINE_VOXELS :: 5
 
 Engine :: struct{
     vulkan_app : vkApplication,
+    voxels : [N_ENGINE_VOXELS]Voxel,
 }
 
+Voxel :: struct{
+    position : glsl.mat4,
+    rotation : glsl.mat4,
+    scale : glsl.mat4,
+    model : glsl.mat4,
+}
+
+
+//VULKAN STRUCTS
 vkApplication :: struct {
     is_debug_mode : bool,
     vk_debug_messenger : vk.DebugUtilsMessengerEXT, 

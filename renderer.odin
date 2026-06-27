@@ -22,7 +22,7 @@ N_INDICES :: 36
 MAX_FRAMES_IN_FLIGHT :: 1
 MAX_TEXTURES :: 2
 
-draw_frame::proc(app : ^vkApplication, current_time : f32){
+draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     vk.WaitForFences(app.device, 1 , &app.in_flight_fence, true, max(u64))
     vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
@@ -30,7 +30,7 @@ draw_frame::proc(app : ^vkApplication, current_time : f32){
     vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
 
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
-    record_draw_command_buffer_dynamic(app, app.draw_command_buffers[image_index], image_index)
+    record_draw_command_buffer_dynamic(engine, app, app.draw_command_buffers[image_index], image_index)
 
     update_global_transform_UBO(app, current_time)
     wait_semaphores : [1]vk.Semaphore = {app.image_available_semaphore}
@@ -90,7 +90,7 @@ init_sdl::proc(app : ^vkApplication){
 }
 
 
-init_vulkan::proc(app : ^vkApplication) {
+init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
     vk_get_proc_addr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
     if vk_get_proc_addr == nil {
 	fmt.println("Fallo al obtener vkGetInstanceProcAddr")
@@ -717,14 +717,21 @@ create_pipeline::proc(app : ^vkApplication, vertex_binding_descriptions : ^[N_VE
     depth_stencil_state_info.maxDepthBounds = f32(1)
     depth_stencil_state_info.stencilTestEnable = false
 
+
+    //push_constatns
+    push_constants_range : vk.PushConstantRange
+    push_constants_range.stageFlags = {vk.ShaderStageFlag.VERTEX}
+    push_constants_range.offset = 0
+    push_constants_range.size = size_of(glsl.mat4)
+
     //pipeline_layout
     descriptor_set_layouts : [2]vk.DescriptorSetLayout = {app.frame_descriptor_set_layout, app.material_descriptor_set_layout}
     pipeline_layout_info : vk.PipelineLayoutCreateInfo
     pipeline_layout_info.sType = vk.StructureType.PIPELINE_LAYOUT_CREATE_INFO
     pipeline_layout_info.setLayoutCount = 2
     pipeline_layout_info.pSetLayouts = raw_data(&descriptor_set_layouts)
-    pipeline_layout_info.pushConstantRangeCount = 0
-    pipeline_layout_info.pPushConstantRanges = nil
+    pipeline_layout_info.pushConstantRangeCount = 1
+    pipeline_layout_info.pPushConstantRanges = &push_constants_range 
     pipeline_layout_res := vk.CreatePipelineLayout(app.device, &pipeline_layout_info, nil,
 	&app.graphics_pipeline_layout)
     if pipeline_layout_res != vk.Result.SUCCESS{
@@ -803,6 +810,7 @@ create_draw_command_buffers::proc(app : ^vkApplication){
 
 
 create_vertex_buffer::proc(app : ^vkApplication){
+    //vertices : [N_ENGINE_VOXELS*8]Vertex
     vertices : [N_VERTICES]Vertex
     setup_vertices(&vertices)
    
@@ -810,7 +818,7 @@ create_vertex_buffer::proc(app : ^vkApplication){
     staging_buffer_memory : vk.DeviceMemory
     staging_buffer_create_info : vk.BufferCreateInfo
     staging_buffer_create_info.sType = vk.StructureType.BUFFER_CREATE_INFO
-    staging_buffer_create_info.size = size_of(Vertex) * N_VERTICES
+    staging_buffer_create_info.size = size_of(vertices)
     staging_buffer_create_info.usage = {vk.BufferUsageFlag.TRANSFER_SRC}
     staging_buffer_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
     sb_property_flags : vk.MemoryPropertyFlags
@@ -819,7 +827,7 @@ create_vertex_buffer::proc(app : ^vkApplication){
 
     vertex_buffer_create_info : vk.BufferCreateInfo
     vertex_buffer_create_info.sType = vk.StructureType.BUFFER_CREATE_INFO
-    vertex_buffer_create_info.size = size_of(Vertex) * N_VERTICES
+    vertex_buffer_create_info.size = size_of(vertices)
     vertex_buffer_create_info.usage = {vk.BufferUsageFlag.VERTEX_BUFFER, vk.BufferUsageFlag.TRANSFER_DST}
     vertex_buffer_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
     vb_property_flags : vk.MemoryPropertyFlags
@@ -1155,7 +1163,7 @@ find_supported_format::proc(app: ^vkApplication, candidates : []vk.Format, tilin
 }
 
 
-record_draw_command_buffer_dynamic::proc(app : ^vkApplication, command_buffer : vk.CommandBuffer, image_index : u32){
+record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, command_buffer : vk.CommandBuffer, image_index : u32){
     comm_buff_begin_info : vk.CommandBufferBeginInfo
     comm_buff_begin_info.sType = vk.StructureType.COMMAND_BUFFER_BEGIN_INFO
     comm_buff_begin_info.flags = {vk.CommandBufferUsageFlag.ONE_TIME_SUBMIT}
@@ -1220,12 +1228,16 @@ record_draw_command_buffer_dynamic::proc(app : ^vkApplication, command_buffer : 
     scissor.extent = app.swapchain_image_extent 
     vk.CmdSetScissor(command_buffer, 0, 1, &scissor)
 
-
     sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	0, 2, raw_data(&sets_to_bind), 0, nil)
 
-    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, 0, 0, 0)
+    //test_model := glsl.mat4(1.0)
+    for &voxel in engine.voxels{
+	vk.CmdPushConstants(command_buffer, app.graphics_pipeline_layout, {vk.ShaderStageFlag.VERTEX}, 0, size_of(glsl.mat4), raw_data(&voxel.model))
+
+	vk.CmdDrawIndexed(command_buffer, N_INDICES, 1, 0, 0, 0)
+    }
 
     texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
     //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
@@ -1233,7 +1245,7 @@ record_draw_command_buffer_dynamic::proc(app : ^vkApplication, command_buffer : 
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	1, 1, raw_data(&texture1_bind), 0, nil)
 
-    vk.CmdDrawIndexed(command_buffer, N_INDICES/2, 1, N_INDICES/2, 0, 0)
+    vk.CmdDrawIndexed(command_buffer, N_INDICES, 1, 0, 0, 0)
 
     vk.CmdEndRendering(command_buffer)
     transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
@@ -1425,7 +1437,6 @@ end_single_time_command::proc(app: ^vkApplication, command_buffer : ^vk.CommandB
     vk.FreeCommandBuffers(app.device, app.main_command_pool, 1, command_buffer)
 }
 
-
 setup_vertices::proc(vertices : ^[N_VERTICES]Vertex){
     vertices[0].pos = {f32(-0.5), f32(-0.5), f32(-0.5)}
     vertices[0].color = {f32(1), f32(0), f32(0)}
@@ -1458,4 +1469,43 @@ setup_vertices::proc(vertices : ^[N_VERTICES]Vertex){
     vertices[7].pos = {f32(-0.5), f32(-0.5), f32(0.5)}
     vertices[7].color = {f32(0), f32(1), f32(0)}
     vertices[7].tex_coords = {f32(1), f32(0)}
+}
+
+
+setup_multiple_vertices::proc(vertices : ^[N_ENGINE_VOXELS*8]Vertex){
+    offset : u32
+    for i : u32 = 0; i < N_ENGINE_VOXELS ; i += 1 {
+	offset = i * 8	
+	vertices[0+offset].pos = {f32(-0.5), f32(-0.5), f32(-0.5)}
+	vertices[0+offset].color = {f32(1), f32(0), f32(0)}
+	vertices[0+offset].tex_coords = {f32(0), f32(0)}
+
+	vertices[1+offset].pos = {f32(-0.5), f32(0.5), f32(-0.5)}
+	vertices[1+offset].color = {f32(1), f32(0), f32(0)}
+	vertices[1+offset].tex_coords = {f32(0), f32(1)}
+
+	vertices[2+offset].pos = {f32(0.5), f32(0.5), f32(-0.5)}
+	vertices[2+offset].color = {f32(1), f32(0), f32(1)}
+	vertices[2+offset].tex_coords = {f32(1), f32(1)}
+
+	vertices[3+offset].pos = {f32(0.5), f32(-0.5), f32(-0.5)}
+	vertices[3+offset].color = {f32(1), f32(0), f32(0)}
+	vertices[3+offset].tex_coords = {f32(1), f32(0)}
+
+	vertices[4+offset].pos = {f32(0.5), f32(0.5), f32(0.5)}
+	vertices[4+offset].color = {f32(0), f32(1), f32(0)}
+	vertices[4+offset].tex_coords = {f32(0), f32(0)}
+
+	vertices[5+offset].pos = {f32(0.5), f32(-0.5), f32(0.5)}
+	vertices[5+offset].color = {f32(0), f32(1), f32(0)}
+	vertices[5+offset].tex_coords = {f32(0), f32(1)}
+
+	vertices[6+offset].pos = {f32(-0.5), f32(0.5), f32(0.5)}
+	vertices[6+offset].color = {f32(0), f32(1), f32(1)}
+	vertices[6+offset].tex_coords = {f32(1), f32(1)}
+
+	vertices[7+offset].pos = {f32(-0.5), f32(-0.5), f32(0.5)}
+	vertices[7+offset].color = {f32(0), f32(1), f32(0)}
+	vertices[7+offset].tex_coords = {f32(1), f32(0)}
+    }
 }

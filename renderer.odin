@@ -65,14 +65,14 @@ draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
 
 update_global_transform_UBO::proc(app : ^vkApplication, current_time : f32){
     ubo : GlobalTransformUBO
-    //ubo.model = glsl.mat4(1.0)
-    model_matrix : glsl.mat4 = glsl.mat4(1.0)
-    rotate_y_mat4(&model_matrix, current_time/500)
-    rotate_x_mat4(&model_matrix, -50)
-    translate_z_mat4(&model_matrix, 1)
-    scale_mat4(&model_matrix, 0.5)
-    ubo.model = model_matrix
-    ubo.view = glsl.mat4(1.0)
+    ubo.model = glsl.mat4(1.0)
+
+    
+
+    view_matrix: glsl.mat4 = glsl.mat4(1.0)
+    translate_z_mat4(&view_matrix, 0.5)
+
+    ubo.view = view_matrix
     ubo.proj = glsl.mat4(1.0)    
 
     //fmt.printf("The memory address is: 0x%X\n", uintptr(&ubo))

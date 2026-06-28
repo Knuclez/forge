@@ -56,3 +56,6 @@ scale_mat4::proc(to_scale : ^glsl.mat4, scale_value: f32){
 translate_z_mat4::proc(to_translate : ^glsl.mat4, translate_value: f32){
     to_translate[3][2] = translate_value
 }
+translate_x_mat4::proc(to_translate : ^glsl.mat4, translate_value: f32){
+    to_translate[3][0] = translate_value
+}

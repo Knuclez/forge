@@ -13,7 +13,8 @@ main::proc() {
     looping : bool = true
 
     init_engine(&engine) 
-
+    
+    fmt.println(size_of(Voxel))
     last_frame_time : u32 = sdl2.GetTicks()
     current_time : u32
     elapsed_time : u32
@@ -27,6 +28,7 @@ main::proc() {
 	delta : f32 = f32(elapsed_time) / f32(1000)
 	process_input(&looping)
 	if !looping { break }
+	rotate_voxels(&engine, f32(current_time))
 	draw_frame(&engine, &engine.vulkan_app, f32(current_time))
 
 	frame_time :u32 = sdl2.GetTicks() - current_time
@@ -75,9 +77,14 @@ init_voxels::proc(engine : ^Engine){
 	model_matrix[3][0] = f32(i) * f32(1)
 
 	rotate_y_mat4(&model_matrix, 500)
-	rotate_x_mat4(&model_matrix, -50)
 	scale_mat4(&model_matrix, 0.2)
 	voxel.model = model_matrix
 	i += 1
+    }
+}
+
+rotate_voxels::proc(engine : ^Engine, current_time : f32){
+    for &voxel in engine.voxels{
+	rotate_y_mat4(&voxel.model, current_time/500)
     }
 }

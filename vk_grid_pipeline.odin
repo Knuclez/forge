@@ -111,7 +111,7 @@ create_grid_index_buffer::proc(app : ^vkApplication){
     index_buffer_create_info.sharingMode = vk.SharingMode.EXCLUSIVE
     ib_property_flags : vk.MemoryPropertyFlags
     ib_property_flags = {vk.MemoryPropertyFlag.DEVICE_LOCAL}
-    create_vk_buffer(app, &app.grid_index_buffer, &index_buffer_create_info, &app.index_buffer_memory, ib_property_flags)
+    create_vk_buffer(app, &app.grid_index_buffer, &index_buffer_create_info, &app.grid_index_buffer_memory, ib_property_flags)
 
     data : rawptr
     vk.MapMemory(app.device, staging_buffer_memory, 0, staging_buffer_create_info.size, {}, &data)

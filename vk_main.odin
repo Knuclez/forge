@@ -97,14 +97,6 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 
     vk.CmdBeginRendering(command_buffer, &rendering_info)
 
-    vk.CmdBindPipeline(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline)
-
-    vertex_buffers : [1]vk.Buffer = {app.vertex_buffer}
-    offsets : [1]vk.DeviceSize = {0}
-    vk.CmdBindVertexBuffers(command_buffer, 0, 1, raw_data(&vertex_buffers), raw_data(&offsets))
-
-    vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
-
     viewport : vk.Viewport
     viewport.x = f32(0)
     viewport.y = f32(0)
@@ -120,6 +112,26 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
     scissor.extent = app.swapchain_image_extent 
     vk.CmdSetScissor(command_buffer, 0, 1, &scissor)
 
+    //NEW SHIT
+    vk.CmdBindPipeline(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.grid_gp)
+    grid_vertex_buffers : [1]vk.Buffer = {app.grid_vertex_buffer}
+    grid_vertex_offsets : [1]vk.DeviceSize = {0}
+    vk.CmdBindVertexBuffers(command_buffer, 0, 1, raw_data(&grid_vertex_buffers), raw_data(&grid_vertex_offsets))
+    vk.CmdBindIndexBuffer(command_buffer, app.grid_index_buffer, 0, vk.IndexType.UINT16)
+
+    grid_desc_sets : [1]vk.DescriptorSet = {app.frame_descriptor_sets[0]}
+    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.grid_gp_layout,
+	0, 1, raw_data(&grid_desc_sets), 0, nil)
+    
+    vk.CmdDrawIndexed(command_buffer, N_GRID_INDICES, 1, 0, 0, 0)
+
+
+    vertex_buffers : [1]vk.Buffer = {app.vertex_buffer}
+    offsets : [1]vk.DeviceSize = {0}
+    vk.CmdBindPipeline(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline)
+    vk.CmdBindVertexBuffers(command_buffer, 0, 1, raw_data(&vertex_buffers), raw_data(&offsets))
+    vk.CmdBindIndexBuffer(command_buffer, app.index_buffer, 0, vk.IndexType.UINT16)
+
     sets_to_bind : [2]vk.DescriptorSet = {app.frame_descriptor_sets[0], app.material_descriptor_sets[0]}
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	0, 2, raw_data(&sets_to_bind), 0, nil)
@@ -131,6 +143,7 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 	vk.CmdDrawIndexed(command_buffer, N_VOXEL_INDICES, 1, 0, 0, 0)
     }
 
+    /*
     texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
     //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
     //entonces puedo reemplazar solo el de las texturas diciendo el indice=1 y cantidad=1
@@ -138,6 +151,7 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 	1, 1, raw_data(&texture1_bind), 0, nil)
 
     vk.CmdDrawIndexed(command_buffer, N_VOXEL_INDICES, 1, 0, 0, 0)
+    */
 
     vk.CmdEndRendering(command_buffer)
     transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
@@ -154,10 +168,12 @@ update_global_transform_UBO::proc(app : ^vkApplication, current_time : f32){
     ubo.model = glsl.mat4(1.0)
 
     view_matrix: glsl.mat4 = glsl.mat4(1.0)
+    rotate_x_mat4(&view_matrix, 0.45) //Rotar negativo es hacia abajo
     translate_z_mat4(&view_matrix, 0.5)
+    translate_y_mat4(&view_matrix, 0.5) //Y positivo es arriba
 
     ubo.view = view_matrix
-    ubo.proj = glsl.mat4(1.0)    
+    ubo.proj = glsl.mat4(1.0)
 
     //fmt.printf("The memory address is: 0x%X\n", uintptr(&ubo))
     intrinsics.mem_copy(app.uniform_buffers_mapped[0], &ubo, size_of(ubo))
@@ -193,7 +209,7 @@ init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
     create_global_transform_UBO(app)
     prepare_frame_descriptor_set_layout(app)
     instantiate_frame_descriptor_sets(app)
-    //prepare_grid_pipeline(app)
+    prepare_grid_pipeline(app)
     prepare_voxels_pipeline(app)
     create_sync_objects(app)
 }

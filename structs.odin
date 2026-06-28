@@ -35,40 +35,51 @@ vkApplication :: struct {
 
     swapchain : vk.SwapchainKHR,
     swapchain_image_extent : vk.Extent2D,
-    image_count : u32,
+    swapchain_image_count : u32,
     swapchain_images : [^]vk.Image,
     swapchain_image_views : [^]vk.ImageView,
-
-
-    graphics_pipeline_layout : vk.PipelineLayout, 
-    graphics_pipeline : vk.Pipeline,
 
     main_command_pool : vk.CommandPool,
     draw_command_buffers : [^]vk.CommandBuffer,
 
-    vertex_buffer : vk.Buffer,
-    vertex_buffer_memory : vk.DeviceMemory,
-    index_buffer : vk.Buffer,
-    index_buffer_memory : vk.DeviceMemory,
-
-    textures : [2]VulkanTexture,
+    //GENERAL RESOURCES (MULTIPLE PIPELINES)
     depth_resources : DepthResources,
-
-    uniform_buffers : [1]vk.Buffer,
-    uniform_buffers_memory : [1]vk.DeviceMemory,
-    uniform_buffers_mapped : [1]rawptr,
 
     frame_descriptor_set_layout : vk.DescriptorSetLayout,
     frame_descriptor_pool : vk.DescriptorPool,
     frame_descriptor_sets : [1]vk.DescriptorSet,
+    uniform_buffers : [1]vk.Buffer,
+    uniform_buffers_memory : [1]vk.DeviceMemory,
+    uniform_buffers_mapped : [1]rawptr,
+
+    //GRID PIPELINES
+    grid_gp_layout : vk.PipelineLayout, 
+    grid_gp : vk.Pipeline,
+    grid_vertex_buffer : vk.Buffer,
+    grid_vertex_buffer_memory : vk.DeviceMemory,
+    grid_index_buffer : vk.Buffer,
+    grid_index_buffer_memory : vk.DeviceMemory,
+
+    //NOT RENAMED TO MAINTAIN BACKWARD-COMPAT
+    //this is voxels pipeline
+    graphics_pipeline_layout : vk.PipelineLayout, 
+    graphics_pipeline : vk.Pipeline,
+    vertex_buffer : vk.Buffer,
+    vertex_buffer_memory : vk.DeviceMemory,
+    index_buffer : vk.Buffer,
+    index_buffer_memory : vk.DeviceMemory,
+    textures : [2]VulkanTexture,
+
     material_descriptor_set_layout : vk.DescriptorSetLayout,
     material_descriptor_pool : vk.DescriptorPool,
     material_descriptor_sets : [2]vk.DescriptorSet, 
 
+    //SYNC
     in_flight_fence : vk.Fence,
     image_available_semaphore : vk.Semaphore,
     render_finished_semaphore : vk.Semaphore,
 }
+
 
 DepthResources :: struct {
     image : vk.Image,

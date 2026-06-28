@@ -1,6 +1,7 @@
 package testsito
 
 import "core:fmt"
+import "core:math/linalg/glsl"
 import "vendor:sdl2"
 import vk "vendor:vulkan"
 
@@ -19,7 +20,7 @@ main::proc() {
     for looping {
 	current_time = sdl2.GetTicks()
 	elapsed_time = current_time - last_frame_time
-	fmt.println(elapsed_time)
+	//fmt.println("elapsed_time: "elapsed_time)
 
 	last_frame_time = current_time
 
@@ -59,5 +60,24 @@ process_input::proc(looping : ^bool){
 	    case sdl2.EventType.KEYDOWN:
 		looping^ = false
 	}
+    }
+}
+
+
+init_voxels::proc(engine : ^Engine){
+    i : u32 = 0
+    for &voxel in engine.voxels {
+	model_matrix : glsl.mat4 = glsl.mat4(1.0)
+	voxel.position = glsl.mat4(1.0)
+	voxel.rotation = glsl.mat4(1.0)
+	voxel.scale = glsl.mat4(1.0)
+
+	model_matrix[3][0] = f32(i) * f32(1)
+
+	rotate_y_mat4(&model_matrix, 500)
+	rotate_x_mat4(&model_matrix, -50)
+	scale_mat4(&model_matrix, 0.2)
+	voxel.model = model_matrix
+	i += 1
     }
 }

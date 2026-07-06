@@ -8,17 +8,17 @@ import vk "vendor:vulkan"
 FPS :: 100
 FRAME_TIME :: 1000/FPS
 
+engine : Engine 
+
 main::proc() {
-    engine : Engine 
-    looping : bool = true
+    engine.looping = true
 
     init_engine(&engine) 
     
-    fmt.println(size_of(Voxel))
     last_frame_time : u32 = sdl2.GetTicks()
     current_time : u32
     elapsed_time : u32
-    for looping {
+    for engine.looping {
 	current_time = sdl2.GetTicks()
 	elapsed_time = current_time - last_frame_time
 	//fmt.println("elapsed_time: "elapsed_time)
@@ -26,8 +26,8 @@ main::proc() {
 	last_frame_time = current_time
 
 	delta : f32 = f32(elapsed_time) / f32(1000)
-	process_input(&looping)
-	if !looping { break }
+	process_input(&engine.looping)
+	if !engine.looping { break }
 	rotate_voxels(&engine, f32(current_time))
 	draw_frame(&engine, &engine.vulkan_app, f32(current_time))
 
@@ -42,27 +42,34 @@ main::proc() {
     terminate_engine(&engine)
 }
 
-init_engine::proc(engine : ^Engine){
-    engine.vulkan_app.is_debug_mode = true
-    init_voxels(engine)
-    init_sdl(&engine.vulkan_app)
-    init_vulkan(engine, &engine.vulkan_app)
+get_engine_p::proc() -> ^Engine{
+    if engine == {} {
+	fmt.println("Engine is nil")
+    }
+    return &engine
 }
 
 terminate_engine::proc(engine : ^Engine){
     clean_up_vulkan(&engine.vulkan_app)
 }
 
-process_input::proc(looping : ^bool){
-    event : sdl2.Event
-    for sdl2.PollEvent(&event){
-	#partial switch event.type {
-	    case sdl2.EventType.QUIT:
-		looping^ = false
-	    case sdl2.EventType.KEYDOWN:
-		looping^ = false
-	}
+
+init_engine::proc(engine : ^Engine){
+    engine.vulkan_app.is_debug_mode = true
+    init_voxels(engine)
+    init_view_and_projection_transforms(engine)
+    init_sdl(&engine.vulkan_app)
+    init_vulkan(engine, &engine.vulkan_app)
+}
+
+
+init_sdl::proc(app : ^vkApplication){
+    res := sdl2.CreateWindow("Titel", 30, 30, WINDOW_WIDTH, WINDOW_HEIGHT, {sdl2.WindowFlag.VULKAN})
+    if res == nil{
+	fmt.println("Fallo al crear la ventana en init_sdl")
+	return
     }
+    app.window = res 
 }
 
 
@@ -74,17 +81,29 @@ init_voxels::proc(engine : ^Engine){
 	voxel.rotation = glsl.mat4(1.0)
 	voxel.scale = glsl.mat4(1.0)
 
-	model_matrix[3][0] = f32(i) * f32(1)
-
 	rotate_y_mat4(&model_matrix, 500)
+	translate_x_mat4(&model_matrix, f32(i))
 	scale_mat4(&model_matrix, 0.2)
 	voxel.model = model_matrix
 	i += 1
     }
 }
 
+
 rotate_voxels::proc(engine : ^Engine, current_time : f32){
     for &voxel in engine.voxels{
-	rotate_y_mat4(&voxel.model, current_time/500)
+	//rotate_y_mat4(&voxel.model, current_time/50)
     }
 }
+
+
+init_view_and_projection_transforms::proc(engine : ^Engine){
+    engine.view_transform = glsl.mat4(1.0)
+    rotate_x_mat4(&engine.view_transform, -0.2) //Rotar negativo es hacia abajo
+    translate_z_mat4(&engine.view_transform, -3)
+
+    aspect_ratio : f32 = (f32(WINDOW_WIDTH)/2) / (f32(WINDOW_HEIGHT)/2)
+    engine.projection_transform = implement_perspective_projection(f32(0.80), aspect_ratio, f32(0.1), f32(1000))
+} 
+
+

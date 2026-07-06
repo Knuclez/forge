@@ -26,7 +26,7 @@ prepare_voxels_pipeline::proc(app : ^vkApplication){
     create_test_texture2(app)
     create_vertex_buffer(app)
     create_index_buffer(app)
-    prepare_voxel_descriptor_set_layout(app)
+    prepare_material_descriptor_set_layout(app)
     instantiate_material_descriptor_sets(app)
     create_voxels_pipeline(app, &vertex_binding_descriptions, &vertex_attribute_descriptions)
 }
@@ -320,7 +320,7 @@ create_index_buffer::proc(app : ^vkApplication){
 
 
 
-prepare_voxel_descriptor_set_layout::proc(app : ^vkApplication){
+prepare_material_descriptor_set_layout::proc(app : ^vkApplication){
     /*
     sampler_layout_binding : vk.DescriptorSetLayoutBinding
     sampler_layout_binding.binding = 0

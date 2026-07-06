@@ -7,8 +7,11 @@ import glsl "core:math/linalg/glsl"
 N_ENGINE_VOXELS :: 5
 
 Engine :: struct{
+    looping : bool,
     vulkan_app : vkApplication,
     voxels : [N_ENGINE_VOXELS]Voxel,
+    view_transform : glsl.mat4,
+    projection_transform : glsl.mat4,
 }
 
 Voxel :: struct{

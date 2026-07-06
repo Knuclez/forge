@@ -23,7 +23,7 @@ draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
     record_draw_command_buffer_dynamic(engine, app, app.draw_command_buffers[image_index], image_index)
 
-    update_global_transform_UBO(app, current_time)
+    update_global_transform_UBO(engine, app, current_time)
     wait_semaphores : [1]vk.Semaphore = {app.image_available_semaphore}
     wait_stages : [1]vk.PipelineStageFlags = {{vk.PipelineStageFlag.COLOR_ATTACHMENT_OUTPUT}}
 
@@ -163,33 +163,17 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 }
 
 
-update_global_transform_UBO::proc(app : ^vkApplication, current_time : f32){
+update_global_transform_UBO::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     ubo : GlobalTransformUBO
     ubo.model = glsl.mat4(1.0)
+    ubo.view = engine.view_transform
+    ubo.proj = engine.projection_transform
 
-    view_matrix: glsl.mat4 = glsl.mat4(1.0)
-    rotate_x_mat4(&view_matrix, 0.45) //Rotar negativo es hacia abajo
-    translate_z_mat4(&view_matrix, 0.5)
-    translate_y_mat4(&view_matrix, 0.5) //Y positivo es arriba
-
-    ubo.view = view_matrix
-    ubo.proj = glsl.mat4(1.0)
-
-    //fmt.printf("The memory address is: 0x%X\n", uintptr(&ubo))
     intrinsics.mem_copy(app.uniform_buffers_mapped[0], &ubo, size_of(ubo))
 }
 
 
 //=========== CREATIONS/INITIALIZATIONS/CLEAN UP ============================================
-init_sdl::proc(app : ^vkApplication){
-    res := sdl2.CreateWindow("Titel", 30, 30, WINDOW_WIDTH, WINDOW_HEIGHT, {sdl2.WindowFlag.VULKAN})
-    if res == nil{
-	fmt.println("Fallo al crear la ventana en init_sdl")
-	return
-    }
-    app.window = res 
-}
-
 
 init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
     vk_get_proc_addr := sdl2.Vulkan_GetVkGetInstanceProcAddr()

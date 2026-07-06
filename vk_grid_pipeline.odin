@@ -80,13 +80,13 @@ create_grid_vertex_buffer::proc(app : ^vkApplication){
 
 
 setup_grid_vertices::proc(vertices : ^[N_GRID_VERTICES]GridVertex){
-    vertices[0] = {f32(-1), f32(0), f32(-1)}
+    vertices[0] = {f32(-100), f32(0), f32(-100)}
 
-    vertices[1] = {f32(-1), f32(0), f32(1)}
+    vertices[1] = {f32(-100), f32(0), f32(100)}
 
-    vertices[2] = {f32(1), f32(0), f32(-1)}
+    vertices[2] = {f32(100), f32(0), f32(-100)}
 
-    vertices[3] = {f32(1), f32(0), f32(1)}
+    vertices[3] = {f32(100), f32(0), f32(100)}
 }
 
 

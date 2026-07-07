@@ -10,11 +10,15 @@ Engine :: struct{
     looping : bool,
     vulkan_app : vkApplication,
     voxels : [N_ENGINE_VOXELS]Voxel,
-    view_transform : glsl.mat4,
+    view_transform : Object3D,
     projection_transform : glsl.mat4,
 }
 
-Voxel :: struct{
+Voxel::struct{
+    using Object3D,
+}
+
+Object3D :: struct{
     position : glsl.mat4,
     rotation : glsl.mat4,
     scale : glsl.mat4,

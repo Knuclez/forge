@@ -166,7 +166,7 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 update_global_transform_UBO::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     ubo : GlobalTransformUBO
     ubo.model = glsl.mat4(1.0)
-    ubo.view = engine.view_transform
+    ubo.view = engine.view_transform.model
     ubo.proj = engine.projection_transform
 
     intrinsics.mem_copy(app.uniform_buffers_mapped[0], &ubo, size_of(ubo))

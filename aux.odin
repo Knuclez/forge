@@ -102,7 +102,7 @@ implement_perspective_projection::proc(fov_y : f32, aspect : f32, near :f32, far
     tan_half_fov_y : f32 = glsl.tan(fov_y/2)
     res := glsl.mat4(0.0)
     res[0][0] = 1/(tan_half_fov_y * aspect) 
-    res[1][1] = 1/(tan_half_fov_y) 
+    res[1][1] = -1/(tan_half_fov_y) 
     res[2][2] = far / (near-far)
     res[3][2] = (far * near) / (near-far)
     res[2][3] = -1

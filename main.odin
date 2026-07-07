@@ -26,9 +26,9 @@ main::proc() {
 	last_frame_time = current_time
 
 	delta : f32 = f32(elapsed_time) / f32(1000)
-	process_input(&engine.looping)
+	process_input(&engine.looping, delta)
 	if !engine.looping { break }
-	rotate_voxels(&engine, f32(current_time))
+	recalculate_3d_models(&engine)
 	draw_frame(&engine, &engine.vulkan_app, f32(current_time))
 
 	frame_time :u32 = sdl2.GetTicks() - current_time
@@ -82,7 +82,7 @@ init_voxels::proc(engine : ^Engine){
 	voxel.scale = glsl.mat4(1.0)
 
 	rotate_y_mat4(&model_matrix, 500)
-	translate_x_mat4(&model_matrix, f32(i))
+	translate_x_mat4(&model_matrix, f32(i * 2))
 	scale_mat4(&model_matrix, 0.2)
 	voxel.model = model_matrix
 	i += 1
@@ -98,12 +98,17 @@ rotate_voxels::proc(engine : ^Engine, current_time : f32){
 
 
 init_view_and_projection_transforms::proc(engine : ^Engine){
-    engine.view_transform = glsl.mat4(1.0)
-    rotate_x_mat4(&engine.view_transform, -0.2) //Rotar negativo es hacia abajo
-    translate_z_mat4(&engine.view_transform, -3)
+    engine.view_transform.rotation = glsl.mat4(1.0)
+    engine.view_transform.position = glsl.mat4(1.0)
+    engine.view_transform.scale = glsl.mat4(1.0)
+    engine.view_transform.model = glsl.mat4(1.0)
+    rotate_x_mat4(&engine.view_transform.model, 0.2) //Rotar positivo es hacia abajo
+    translate_z_mat4(&engine.view_transform.model, -3)
 
     aspect_ratio : f32 = (f32(WINDOW_WIDTH)/2) / (f32(WINDOW_HEIGHT)/2)
     engine.projection_transform = implement_perspective_projection(f32(0.80), aspect_ratio, f32(0.1), f32(1000))
 } 
 
-
+recalculate_3d_models::proc(engine : ^Engine){
+    engine.view_transform.model = engine.view_transform.scale * engine.view_transform.position * engine.view_transform.rotation
+}

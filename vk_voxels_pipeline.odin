@@ -287,7 +287,15 @@ create_index_buffer::proc(app : ^vkApplication){
 				u16(7),u16(6),u16(1),u16(1),u16(0),u16(7),
 				u16(0),u16(3),u16(5),u16(5),u16(7),u16(0),
 				u16(1),u16(6),u16(4),u16(4),u16(2),u16(1)}
-   
+    /* 
+    indices : [N_VOXEL_INDICES]u16 = {u16(0),u16(3),u16(2),u16(2),u16(1),u16(0),
+				u16(3),u16(5),u16(4),u16(4),u16(2),u16(3),
+				u16(5),u16(7),u16(6),u16(6),u16(4),u16(5),
+				u16(7),u16(0),u16(1),u16(1),u16(6),u16(7),
+				u16(0),u16(7),u16(5),u16(5),u16(3),u16(0),
+				u16(1),u16(2),u16(4),u16(4),u16(6),u16(1)}
+    */
+
     staging_buffer : vk.Buffer
     staging_buffer_memory : vk.DeviceMemory
     staging_buffer_create_info : vk.BufferCreateInfo

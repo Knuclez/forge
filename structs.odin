@@ -4,7 +4,6 @@ import "vendor:sdl2"
 import vk "vendor:vulkan"
 import glsl "core:math/linalg/glsl"
 
-N_ENGINE_VOXELS :: 5
 
 Engine :: struct{
     looping : bool,

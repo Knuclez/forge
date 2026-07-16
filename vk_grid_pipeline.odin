@@ -91,7 +91,7 @@ setup_grid_vertices::proc(vertices : ^[N_GRID_VERTICES]GridVertex){
 
 
 create_grid_index_buffer::proc(app : ^vkApplication){
-    indices : [N_GRID_INDICES]u16 = {u16(0),u16(1),u16(2),u16(2),u16(3),u16(0)}
+    indices : [N_GRID_INDICES]u16 = {u16(0),u16(3),u16(2),u16(1),u16(2),u16(0)}
    
     staging_buffer : vk.Buffer
     staging_buffer_memory : vk.DeviceMemory

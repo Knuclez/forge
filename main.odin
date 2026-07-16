@@ -21,14 +21,14 @@ main::proc() {
     for engine.looping {
 	current_time = sdl2.GetTicks()
 	elapsed_time = current_time - last_frame_time
-	//fmt.println("elapsed_time: "elapsed_time)
+	//fmt.println("elapsed_time: ", elapsed_time)
 
 	last_frame_time = current_time
 
 	delta : f32 = f32(elapsed_time) / f32(1000)
-	process_input(&engine.looping, delta)
+	process_sdl_events(&engine.looping, delta)
 	if !engine.looping { break }
-	recalculate_3d_models(&engine)
+	recalculate_3d_models(&engine, f32(current_time))
 	draw_frame(&engine, &engine.vulkan_app, f32(current_time))
 
 	frame_time :u32 = sdl2.GetTicks() - current_time
@@ -64,7 +64,7 @@ init_engine::proc(engine : ^Engine){
 
 
 init_sdl::proc(app : ^vkApplication){
-    res := sdl2.CreateWindow("Titel", 30, 30, WINDOW_WIDTH, WINDOW_HEIGHT, {sdl2.WindowFlag.VULKAN})
+    res := sdl2.CreateWindow("Titel", 30, 30, WINDOW_WIDTH, WINDOW_HEIGHT, {sdl2.WindowFlag.VULKAN, sdl2.WindowFlag.RESIZABLE})
     if res == nil{
 	fmt.println("Fallo al crear la ventana en init_sdl")
 	return
@@ -73,42 +73,21 @@ init_sdl::proc(app : ^vkApplication){
 }
 
 
-init_voxels::proc(engine : ^Engine){
-    i : u32 = 0
-    for &voxel in engine.voxels {
-	model_matrix : glsl.mat4 = glsl.mat4(1.0)
-	voxel.position = glsl.mat4(1.0)
-	voxel.rotation = glsl.mat4(1.0)
-	voxel.scale = glsl.mat4(1.0)
-
-	rotate_y_mat4(&model_matrix, 500)
-	translate_x_mat4(&model_matrix, f32(i * 2))
-	scale_mat4(&model_matrix, 0.2)
-	voxel.model = model_matrix
-	i += 1
-    }
-}
-
-
-rotate_voxels::proc(engine : ^Engine, current_time : f32){
-    for &voxel in engine.voxels{
-	//rotate_y_mat4(&voxel.model, current_time/50)
-    }
-}
-
-
 init_view_and_projection_transforms::proc(engine : ^Engine){
     engine.view_transform.rotation = glsl.mat4(1.0)
     engine.view_transform.position = glsl.mat4(1.0)
     engine.view_transform.scale = glsl.mat4(1.0)
     engine.view_transform.model = glsl.mat4(1.0)
-    rotate_x_mat4(&engine.view_transform.model, 0.2) //Rotar positivo es hacia abajo
-    translate_z_mat4(&engine.view_transform.model, -3)
+    rotate_x_mat4(&engine.view_transform.rotation, 0.2) //Rotar positivo es hacia abajo
+    translate_y_mat4(&engine.view_transform.position, -1)
+    translate_z_mat4(&engine.view_transform.position, -3)
 
     aspect_ratio : f32 = (f32(WINDOW_WIDTH)/2) / (f32(WINDOW_HEIGHT)/2)
     engine.projection_transform = implement_perspective_projection(f32(0.80), aspect_ratio, f32(0.1), f32(1000))
 } 
 
-recalculate_3d_models::proc(engine : ^Engine){
+recalculate_3d_models::proc(engine : ^Engine, current_time : f32){
     engine.view_transform.model = engine.view_transform.scale * engine.view_transform.position * engine.view_transform.rotation
+
+    voxels_tick_frame(engine, current_time)
 }

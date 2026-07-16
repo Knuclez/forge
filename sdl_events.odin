@@ -5,7 +5,7 @@ import "vendor:sdl2"
 
 is_mouse3_down : bool = false
 
-process_input::proc(looping : ^bool, delta : f32){
+process_sdl_events::proc(looping : ^bool, delta : f32){
     event : sdl2.Event
     for sdl2.PollEvent(&event){
 	#partial switch event.type {
@@ -23,6 +23,8 @@ process_input::proc(looping : ^bool, delta : f32){
 		interpret_mouse_motion(event, delta)
 	    case sdl2.EventType.MOUSEWHEEL:
 		interpret_mouse_wheel(event, delta)
+	    case sdl2.EventType.WINDOWEVENT:
+		interpret_window_event(event)
 	}
     }
 }
@@ -33,9 +35,9 @@ interpret_key_down::proc(key_down_event : sdl2.Event){
 	case sdl2.Keycode.ESCAPE:
 	    engine_p.looping = false
 	case sdl2.Keycode.w:
-	    move_view_up(engine_p)
+	    move_view_forwards(engine_p)
 	case sdl2.Keycode.s:
-	    move_view_down(engine_p)
+	    move_view_backwards(engine_p)
 	case sdl2.Keycode.a:
 	    move_view_left(engine_p)
 	case sdl2.Keycode.d:
@@ -46,11 +48,13 @@ interpret_key_down::proc(key_down_event : sdl2.Event){
 interpret_key_up::proc(key_up_event : sdl2.Event){
 }
 
-interpret_mouse_button_down::proc(mouse_button_down_event : sdl2.Event){
-    switch mouse_button_down_event.button.button{
+interpret_mouse_button_down::proc(event : sdl2.Event){
+    mouse_button_down_event := event.button
+    switch mouse_button_down_event.button{
+    case sdl2.BUTTON_LEFT:
+	cast_selection_ray(i32(mouse_button_down_event.x), i32(mouse_button_down_event.y))
     case sdl2.BUTTON_MIDDLE:
 	is_mouse3_down = true
-	fmt.println("mouse3_down = ture")
     }
 }
 
@@ -58,7 +62,6 @@ interpret_mouse_button_up::proc(mouse_button_up_event : sdl2.Event){
     switch mouse_button_up_event.button.button{
     case sdl2.BUTTON_MIDDLE:
 	is_mouse3_down = false 
-	fmt.println("mouse3_down false")
     }
 }
 
@@ -74,6 +77,12 @@ interpret_mouse_wheel::proc(mouse_wheel_event : sdl2.Event, delta : f32){
     scroll_amt := f32(mouse_wheel_event.wheel.y)
     move_view_z(engine_p, scroll_amt, delta)
 }
+
+interpret_window_event::proc(sdl_event : sdl2.Event){
+    if sdl_event.window.event == sdl2.WindowEventID.SIZE_CHANGED{
+	fmt.println("sioze changed")
+    }
+}
 //ENGINE EVENTS
 move_view_up::proc(engine : ^Engine){
     translate_y_mat4(&engine.view_transform.position, -0.5)
@@ -81,6 +90,14 @@ move_view_up::proc(engine : ^Engine){
 
 move_view_down::proc(engine : ^Engine){
     translate_y_mat4(&engine.view_transform.position, 0.5)
+}
+
+move_view_forwards::proc(engine : ^Engine){
+    translate_z_mat4(&engine.view_transform.position, -0.5)
+}
+
+move_view_backwards::proc(engine : ^Engine){
+    translate_z_mat4(&engine.view_transform.position, 0.5)
 }
 
 move_view_right::proc(engine : ^Engine){
@@ -98,10 +115,18 @@ move_view_z::proc(engine : ^Engine, scroll_amt:f32, delta:f32){
 }
 
 rotate_view_transform::proc(engine : ^Engine, motion_event : sdl2.MouseMotionEvent, delta : f32){
+
     y_factor : f32 = f32(motion_event.xrel) * delta * 5
-    x_factor : f32 = f32(motion_event.yrel) * delta * 5
+    //x_factor : f32 = f32(motion_event.yrel) * delta * 5
     rotate_y_mat4(&engine.view_transform.rotation, y_factor)
-    rotate_x_mat4(&engine.view_transform.rotation, x_factor)
+    //rotate_x_mat4(&engine.view_transform.rotation, x_factor)
+
 }
 
 
+cast_selection_ray::proc(screen_x : i32, screen_y :i32){
+    fmt.println("click x: ", screen_x)
+    fmt.println("click y: ", screen_y)
+    ray_vector : glsl.vec4 = {screen_x, screen_y, 1, 0}
+
+}

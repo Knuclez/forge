@@ -18,7 +18,13 @@ draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
     image_index : u32
-    vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
+    ani_res := vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
+    
+    if ani_res == vk.Result.ERROR_OUT_OF_DATE_KHR || ani_res == vk.Result.SUBOPTIMAL_KHR {
+	fmt.println("swapchain out of date, recreating...")
+	recreate_swapchain(app)
+	return
+    }
 
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
     record_draw_command_buffer_dynamic(engine, app, app.draw_command_buffers[image_index], image_index)
@@ -51,9 +57,21 @@ draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     present_info.pImageIndices = &image_index
     present_info.pResults = nil
 
-    vk.QueuePresentKHR(app.graphics_queue, &present_info)
+    present_error := vk.QueuePresentKHR(app.graphics_queue, &present_info)
+    if present_error == vk.Result.ERROR_OUT_OF_DATE_KHR || present_error == vk.Result.SUBOPTIMAL_KHR {
+	fmt.println("swapchain out of date after present, recreating...")
+	recreate_swapchain(app)
+	return
+    }
 }
 
+
+resize_extent::proc(app : ^vkApplication){
+    w,h : i32
+    sdl2.Vulkan_GetDrawableSize(app.window, &w, &h)
+    app.swapchain_image_extent.width = u32(w)
+    app.swapchain_image_extent.height = u32(h)
+}
 
 record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, command_buffer : vk.CommandBuffer, image_index : u32){
     comm_buff_begin_info : vk.CommandBufferBeginInfo
@@ -65,7 +83,7 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
 	fmt.println("Error when begining command_buffer_record")
     }
    
-    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
+    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.B8G8R8A8_SRGB,
 	vk.ImageLayout.UNDEFINED, vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL)
     clear_value: vk.ClearValue = {color = {float32 = {0, 0, 0, 1}}}
 
@@ -100,8 +118,8 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
     viewport : vk.Viewport
     viewport.x = f32(0)
     viewport.y = f32(0)
-    viewport.width = WINDOW_WIDTH
-    viewport.height = WINDOW_HEIGHT
+    viewport.width = f32(app.swapchain_image_extent.width)
+    viewport.height = f32(app.swapchain_image_extent.height)
     viewport.minDepth = f32(0)
     viewport.maxDepth = f32(1)
     vk.CmdSetViewport(command_buffer, 0, 1, &viewport)
@@ -154,7 +172,7 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
     */
 
     vk.CmdEndRendering(command_buffer)
-    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.R8G8B8A8_SRGB,
+    transition_image_layout(app, app.swapchain_images[image_index], vk.Format.B8G8R8A8_SRGB,
 	vk.ImageLayout.COLOR_ATTACHMENT_OPTIMAL, vk.ImageLayout.PRESENT_SRC_KHR)
 
     if vk.EndCommandBuffer(command_buffer) != vk.Result.SUCCESS {
@@ -174,6 +192,40 @@ update_global_transform_UBO::proc(engine : ^Engine, app : ^vkApplication, curren
 
 
 //=========== CREATIONS/INITIALIZATIONS/CLEAN UP ============================================
+recreate_swapchain::proc(app : ^vkApplication){
+    vk.DeviceWaitIdle(app.device)
+
+    //destruir draw command buffers
+    if app.draw_command_buffers != nil {
+        vk.FreeCommandBuffers(app.device, app.main_command_pool, app.swapchain_image_count, app.draw_command_buffers)
+        app.draw_command_buffers = nil
+    }
+
+    //destruir image views de la swapchain
+    for i : u32 = 0; i < app.swapchain_image_count; i += 1 {
+        if app.swapchain_image_views[i] != {} {
+            vk.DestroyImageView(app.device, app.swapchain_image_views[i], nil)
+        }
+    }
+    free(app.swapchain_image_views)
+    free(app.swapchain_images)
+
+    //destruir swapchain
+    vk.DestroySwapchainKHR(app.device, app.swapchain, nil)
+
+    //destruir depth resources
+    vk.DestroyImageView(app.device, app.depth_resources.image_view, nil)
+    vk.DestroyImage(app.device, app.depth_resources.image, nil)
+    vk.FreeMemory(app.device, app.depth_resources.memory, nil)
+
+    //actualizar extent al tamaño actual de la ventana
+    resize_extent(app)
+
+    // ====== RECREAR ======
+    create_swapchain(app)
+    create_draw_command_buffers(app)
+    create_depth_resources(app)
+}
 
 init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
     vk_get_proc_addr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
@@ -182,6 +234,9 @@ init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
 	return
     }
     vk.load_proc_addresses_global(vk_get_proc_addr)
+
+    app.swapchain_image_extent.width = WINDOW_WIDTH
+    app.swapchain_image_extent.height = WINDOW_HEIGHT 
 
     create_instance(app) 
     create_logical_device(app)
@@ -200,21 +255,90 @@ init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
 
 
 clean_up_vulkan::proc(app : ^vkApplication){
-    //sync dinge
+    vk.DeviceWaitIdle(app.device)
+
+    //command buffers
+    if app.draw_command_buffers != nil {
+        vk.FreeCommandBuffers(app.device, app.main_command_pool, app.swapchain_image_count, app.draw_command_buffers)
+    }
+
+    //sync objects
     vk.DestroySemaphore(app.device, app.render_finished_semaphore, nil)
     vk.DestroySemaphore(app.device, app.image_available_semaphore, nil)
     vk.DestroyFence(app.device, app.in_flight_fence, nil)
 
+    //descriptor pools (libera los descriptor sets implicitamente)
+    vk.DestroyDescriptorPool(app.device, app.frame_descriptor_pool, nil)
+    vk.DestroyDescriptorPool(app.device, app.material_descriptor_pool, nil)
+
+    //descriptor set layouts
+    vk.DestroyDescriptorSetLayout(app.device, app.frame_descriptor_set_layout, nil)
+    vk.DestroyDescriptorSetLayout(app.device, app.material_descriptor_set_layout, nil)
+
+    //pipelines y layouts
+    vk.DestroyPipeline(app.device, app.graphics_pipeline, nil)
+    vk.DestroyPipelineLayout(app.device, app.graphics_pipeline_layout, nil)
+    vk.DestroyPipeline(app.device, app.grid_gp, nil)
+    vk.DestroyPipelineLayout(app.device, app.grid_gp_layout, nil)
+
+    //uniform buffers
+    for i := 0; i < len(app.uniform_buffers); i += 1 {
+        vk.DestroyBuffer(app.device, app.uniform_buffers[i], nil)
+        vk.FreeMemory(app.device, app.uniform_buffers_memory[i], nil)
+    }
+
+    //voxels: vertex/index buffers
+    vk.DestroyBuffer(app.device, app.vertex_buffer, nil)
+    vk.FreeMemory(app.device, app.vertex_buffer_memory, nil)
+    vk.DestroyBuffer(app.device, app.index_buffer, nil)
+    vk.FreeMemory(app.device, app.index_buffer_memory, nil)
+
+    //grid: vertex/index buffers
+    vk.DestroyBuffer(app.device, app.grid_vertex_buffer, nil)
+    vk.FreeMemory(app.device, app.grid_vertex_buffer_memory, nil)
+    vk.DestroyBuffer(app.device, app.grid_index_buffer, nil)
+    vk.FreeMemory(app.device, app.grid_index_buffer_memory, nil)
+
+    //textures (todas)
+    for t := 0; t < len(app.textures); t += 1 {
+        if app.textures[t].t_sampler != {} {
+            vk.DestroySampler(app.device, app.textures[t].t_sampler, nil)
+        }
+        if app.textures[t].t_image_view != {} {
+            vk.DestroyImageView(app.device, app.textures[t].t_image_view, nil)
+        }
+        if app.textures[t].t_image != {} {
+            vk.DestroyImage(app.device, app.textures[t].t_image, nil)
+        }
+        if app.textures[t].t_memory != {} {
+            vk.FreeMemory(app.device, app.textures[t].t_memory, nil)
+        }
+    }
+
+    //depth resources
     vk.DestroyImageView(app.device, app.depth_resources.image_view, nil)
     vk.DestroyImage(app.device, app.depth_resources.image, nil)
     vk.FreeMemory(app.device, app.depth_resources.memory, nil)
 
-    vk.DestroySampler(app.device, app.textures[0].t_sampler, nil)
-    vk.DestroyImageView(app.device, app.textures[0].t_image_view, nil)
-    vk.DestroyImage(app.device, app.textures[0].t_image, nil)
-    vk.FreeMemory(app.device, app.textures[0].t_memory, nil)
-    free(app.draw_command_buffers)
+    //command pool
+    vk.DestroyCommandPool(app.device, app.main_command_pool, nil)
+
+    //swapchain image views
+    if app.swapchain_image_views != nil {
+        for i : u32 = 0; i < app.swapchain_image_count; i += 1 {
+            vk.DestroyImageView(app.device, app.swapchain_image_views[i], nil)
+        }
+        free(app.swapchain_image_views)
+    }
     free(app.swapchain_images)
+
+    //swapchain
+    vk.DestroySwapchainKHR(app.device, app.swapchain, nil)
+
+    //device, surface, instance
+    vk.DestroyDevice(app.device, nil)
+    vk.DestroySurfaceKHR(app.instance, app.surface, nil)
+    vk.DestroyInstance(app.instance, nil)
 }
 
 
@@ -300,9 +424,18 @@ create_logical_device::proc(app : ^vkApplication) {
     ph_devices := make([^]vk.PhysicalDevice, ph_device_count)
     vk.EnumeratePhysicalDevices(app.instance, &ph_device_count, ph_devices)
 
+    descriptor_indexing_features : vk.PhysicalDeviceDescriptorIndexingFeatures
+    descriptor_indexing_features.sType = vk.StructureType.PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES
+
+    dynamic_rendering_features : vk.PhysicalDeviceVulkan13Features
+    dynamic_rendering_features.sType = vk.StructureType.PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
+    dynamic_rendering_features.dynamicRendering = true
+    dynamic_rendering_features.pNext = &descriptor_indexing_features
+
     physical_device : vk.PhysicalDevice 
     device_features : vk.PhysicalDeviceFeatures2 
     device_features.sType = vk.StructureType.PHYSICAL_DEVICE_FEATURES_2
+    device_features.pNext = &dynamic_rendering_features
     for i in 0..< ph_device_count{
 	if(physical_device == nil){
 	    physical_device = ph_devices[i]
@@ -365,13 +498,10 @@ create_logical_device::proc(app : ^vkApplication) {
     device_queue_create_info.queueCount = 1
     device_queue_create_info.pQueuePriorities = &queue_prio
     
-    dynamic_rendering_features : vk.PhysicalDeviceVulkan13Features
-    dynamic_rendering_features.sType = vk.StructureType.PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
-    dynamic_rendering_features.dynamicRendering = true
 
     device_create_info : vk.DeviceCreateInfo
     device_create_info.sType = vk.StructureType.DEVICE_CREATE_INFO
-    device_create_info.pNext = &dynamic_rendering_features
+    device_create_info.pNext = &device_features
     device_create_info.queueCreateInfoCount = 1
     device_create_info.pQueueCreateInfos = &device_queue_create_info
     device_create_info.enabledExtensionCount = 1
@@ -404,8 +534,6 @@ create_surface::proc(app : ^vkApplication){
 
 
 create_swapchain::proc(app : ^vkApplication) {
-    app.swapchain_image_extent.width = WINDOW_WIDTH
-    app.swapchain_image_extent.height = WINDOW_HEIGHT 
 
     swapchain_create_info : vk.SwapchainCreateInfoKHR
     swapchain_create_info.sType = vk.StructureType.SWAPCHAIN_CREATE_INFO_KHR

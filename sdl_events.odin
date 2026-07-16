@@ -1,6 +1,7 @@
 package testsito
 
 import "core:fmt"
+import "core:math/linalg/glsl"
 import "vendor:sdl2"
 
 is_mouse3_down : bool = false
@@ -127,6 +128,6 @@ rotate_view_transform::proc(engine : ^Engine, motion_event : sdl2.MouseMotionEve
 cast_selection_ray::proc(screen_x : i32, screen_y :i32){
     fmt.println("click x: ", screen_x)
     fmt.println("click y: ", screen_y)
-    ray_vector : glsl.vec4 = {screen_x, screen_y, 1, 0}
+    ray_vector : glsl.vec4 = {f32(screen_x), f32(screen_y), 1, 0}
 
 }

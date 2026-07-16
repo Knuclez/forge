@@ -4,20 +4,39 @@ import "vendor:sdl2"
 import vk "vendor:vulkan"
 import glsl "core:math/linalg/glsl"
 
-
 Engine :: struct{
+    //engine
     looping : bool,
+
+    //rendering
     vulkan_app : vkApplication,
-    voxels : [N_ENGINE_VOXELS]Voxel,
+    
+    //camera
     view_transform : Object3D,
     projection_transform : glsl.mat4,
+
+    //world
+    chunk_map : [16][16][16]GenerationKey,
+    voxels : [N_ENGINE_VOXELS]Voxel,
 }
+
+
+GenerationKey::struct{
+    id : u32,
+    gen : u32,
+}
+
+
+Object3D::struct{
+    position : glsl.mat4,
+    rotation : glsl.mat4,
+    scale : glsl.mat4,
+    model : glsl.mat4,
+}
+
 
 Voxel::struct{
-    using Object3D,
-}
-
-Object3D :: struct{
+    key : GenerationKey,
     position : glsl.mat4,
     rotation : glsl.mat4,
     scale : glsl.mat4,

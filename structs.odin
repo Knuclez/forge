@@ -16,27 +16,28 @@ Engine :: struct{
     projection_transform : glsl.mat4,
 
     //world
-    chunk_map : [16][16][16]GenerationKey,
     voxels : [N_ENGINE_VOXELS]Voxel,
 }
 
 
-GenerationKey::struct{
+IdKey::struct{
     id : u32,
     gen : u32,
 }
 
 
-Object3D::struct{
-    position : glsl.mat4,
-    rotation : glsl.mat4,
-    scale : glsl.mat4,
-    model : glsl.mat4,
+MapChunk::struct{
+    chunk_position : glsl.vec3,
+    data : [16][16][16]IdKey,
 }
 
 
 Voxel::struct{
-    key : GenerationKey,
+    key : IdKey,
+    using obj3D : Object3D,
+}
+
+Object3D::struct{
     position : glsl.mat4,
     rotation : glsl.mat4,
     scale : glsl.mat4,

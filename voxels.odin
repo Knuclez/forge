@@ -39,7 +39,6 @@ init_voxels::proc(engine : ^Engine){
 	    //falta generar el id
 
 	    index := j+1+(i*CHUNK_WIDTH)
-	    fmt.println("index: ", index)
 	    current_voxel : ^Voxel = &engine.voxels[index] //+1 por que quiero dejar el 0 como nul-space
 	    current_voxel.position = glsl.mat4(1.0)
 	    current_voxel.rotation = glsl.mat4(1.0)
@@ -52,16 +51,12 @@ init_voxels::proc(engine : ^Engine){
 		return
 	    }
 	
-	    fmt.println(current_chunk_index)
 	    current_chunk = &engine.map_chunks[current_chunk_index]
 	    current_x = j 
 	    current_z = i % CHUNK_WIDTH
 
 	    transl_x :f32= f32(current_x) + (CHUNK_WIDTH * current_chunk.position.x)
 	    transl_z :f32= -f32(current_z) + (CHUNK_WIDTH * current_chunk.position.z)
-	    //fmt.println("x local",current_x)
-	    //fmt.println("x del chunk: ", current_chunk.position.x)
-	    //fmt.println("translation total: ", transl_x)
 	    translate_x_mat4(&current_voxel.position, transl_x)
 	    translate_z_mat4(&current_voxel.position, transl_z)
 	    scale_mat4(&current_voxel.scale, 1)

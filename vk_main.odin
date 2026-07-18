@@ -59,7 +59,7 @@ draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     present_info.pResults = nil
 
     present_error := vk.QueuePresentKHR(app.graphics_queue, &present_info)
-    if present_error == vk.Result.ERROR_OUT_OF_DATE_KHR || present_error == vk.Result.SUBOPTIMAL_KHR {
+    if present_error == vk.Result.ERROR_OUT_OF_DATE_KHR || present_error == vk.Result.SUBOPTIMAL_KHR || app.frame_buffer_resized{
 	fmt.println("swapchain out of date after present, recreating...")
 	recreate_swapchain(app)
 	return
@@ -183,6 +183,8 @@ update_global_transform_UBO::proc(engine : ^Engine, app : ^vkApplication, curren
 
 //=========== CREATIONS/INITIALIZATIONS/CLEAN UP ============================================
 recreate_swapchain::proc(app : ^vkApplication){
+    fmt.println("empieza recreacion")
+    app.frame_buffer_resized = false
     vk.DeviceWaitIdle(app.device)
 
     //destruir draw command buffers
@@ -208,13 +210,11 @@ recreate_swapchain::proc(app : ^vkApplication){
     vk.DestroyImage(app.device, app.depth_resources.image, nil)
     vk.FreeMemory(app.device, app.depth_resources.memory, nil)
 
-    //actualizar extent al tamaño actual de la ventana
-    resize_extent(app)
-
     // ====== RECREAR ======
     create_swapchain(app)
     create_draw_command_buffers(app)
     create_depth_resources(app)
+    fmt.println("Terimna crea")
 }
 
 init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
@@ -551,7 +551,40 @@ create_surface::proc(app : ^vkApplication){
 }
 
 
+choose_swapchain_image_extent::proc(app : ^vkApplication){
+    capabilities : vk.SurfaceCapabilitiesKHR
+    vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(app.physical_device, app.surface, &capabilities)
+
+    if capabilities.currentExtent.width != max(u32) {
+	app.swapchain_image_extent = capabilities.currentExtent
+	return 
+    }
+
+    w, h: i32
+    sdl2.Vulkan_GetDrawableSize(app.window, &w, &h)
+
+    extent := vk.Extent2D{
+        width  = u32(w),
+        height = u32(h),
+    }
+
+    extent.width = clamp(
+        extent.width,
+        capabilities.minImageExtent.width,
+        capabilities.maxImageExtent.width,
+    )
+
+    extent.height = clamp(
+        extent.height,
+        capabilities.minImageExtent.height,
+        capabilities.maxImageExtent.height,
+    )
+
+    app.swapchain_image_extent = extent
+}
+
 create_swapchain::proc(app : ^vkApplication) {
+    choose_swapchain_image_extent(app)
 
     swapchain_create_info : vk.SwapchainCreateInfoKHR
     swapchain_create_info.sType = vk.StructureType.SWAPCHAIN_CREATE_INFO_KHR
@@ -559,7 +592,7 @@ create_swapchain::proc(app : ^vkApplication) {
     swapchain_create_info.minImageCount = 3
     swapchain_create_info.imageFormat = vk.Format.B8G8R8A8_SRGB
     swapchain_create_info.imageColorSpace = vk.ColorSpaceKHR.SRGB_NONLINEAR
-    swapchain_create_info.imageExtent = app.swapchain_image_extent 
+    swapchain_create_info.imageExtent = app.swapchain_image_extent
     swapchain_create_info.imageArrayLayers = 1 
     swapchain_create_info.imageUsage = {vk.ImageUsageFlag.COLOR_ATTACHMENT}
     swapchain_create_info.imageSharingMode = vk.SharingMode.EXCLUSIVE //una query para todas las queues 

@@ -81,6 +81,8 @@ interpret_mouse_wheel::proc(mouse_wheel_event : sdl2.Event, delta : f32){
 
 interpret_window_event::proc(sdl_event : sdl2.Event){
     if sdl_event.window.event == sdl2.WindowEventID.SIZE_CHANGED{
+	engine : ^Engine = get_engine_p()
+	engine.vulkan_app.frame_buffer_resized = true
 	fmt.println("sioze changed")
     }
 }

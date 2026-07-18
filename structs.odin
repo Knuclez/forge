@@ -54,6 +54,7 @@ vkApplication :: struct {
     window: ^sdl2.Window,
     surface : vk.SurfaceKHR,
     instance : vk.Instance,
+    frame_buffer_resized : bool,
 
     physical_device : vk.PhysicalDevice,
     graphics_queue_family_index : u32,

@@ -6,6 +6,7 @@ import "core:mem"
 import "core:time"
 import "core:math/linalg/glsl"
 import "vendor:sdl2"
+import "base:runtime"
 import "base:intrinsics"
 import vk "vendor:vulkan"
 
@@ -228,6 +229,9 @@ init_vulkan::proc(engine : ^Engine, app : ^vkApplication) {
     app.swapchain_image_extent.height = WINDOW_HEIGHT 
 
     create_instance(app) 
+    if app.is_debug_mode{
+	create_debug_callback(app)
+    }
     create_logical_device(app)
     create_surface(app)
     create_swapchain(app)
@@ -397,6 +401,31 @@ create_instance:: proc(app : ^vkApplication) {
     }
 
     vk.load_proc_addresses_instance(app.instance)
+}
+
+debug_callback::proc"cdecl"(message_severity:vk.DebugUtilsMessageSeverityFlagsEXT,message_type: vk.DebugUtilsMessageTypeFlagsEXT, call_bak_data: ^vk.DebugUtilsMessengerCallbackDataEXT, ptr: rawptr) -> b32{
+    context = runtime.default_context()
+    fmt.println("Debug callback: ", call_bak_data.pMessage)
+    fmt.println("   Severity: ", message_severity)
+    fmt.println("   Type: ", message_type)
+
+    for i:u32=0; i < call_bak_data.objectCount; i+=1 {
+	fmt.println(call_bak_data.pObjects[i].objectHandle)
+    }
+    return false
+}
+
+create_debug_callback::proc(app : ^vkApplication){
+    messenger_create_info : vk.DebugUtilsMessengerCreateInfoEXT
+    messenger_create_info.sType = vk.StructureType.DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT
+    messenger_create_info.messageSeverity = {vk.DebugUtilsMessageSeverityFlagEXT.VERBOSE,
+					    vk.DebugUtilsMessageSeverityFlagEXT.WARNING,
+					    vk.DebugUtilsMessageSeverityFlagEXT.ERROR}
+    messenger_create_info.messageType = {vk.DebugUtilsMessageTypeFlagEXT.GENERAL,
+					vk.DebugUtilsMessageTypeFlagEXT.VALIDATION,
+					vk.DebugUtilsMessageTypeFlagEXT.PERFORMANCE}
+    messenger_create_info.pfnUserCallback = debug_callback
+    //TO-DO
 }
 
 

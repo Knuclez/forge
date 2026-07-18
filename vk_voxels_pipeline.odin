@@ -210,7 +210,6 @@ create_test_texture2::proc(app : ^vkApplication){
 }
 
 create_vertex_buffer::proc(app : ^vkApplication){
-    //vertices : [N_ENGINE_VOXELS*8]Vertex
     vertices : [N_VOXEL_VERTICES]Vertex
     setup_voxel_vertices(&vertices)
    

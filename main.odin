@@ -56,7 +56,7 @@ terminate_engine::proc(engine : ^Engine){
 
 init_engine::proc(engine : ^Engine){
     engine.vulkan_app.is_debug_mode = true
-    init_voxels(engine)
+    init_world(engine)
     init_view_and_projection_transforms(engine)
     init_sdl(&engine.vulkan_app)
     init_vulkan(engine, &engine.vulkan_app)

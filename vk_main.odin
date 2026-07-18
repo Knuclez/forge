@@ -154,22 +154,11 @@ record_draw_command_buffer_dynamic::proc(engine: ^Engine, app : ^vkApplication, 
     vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
 	0, 2, raw_data(&sets_to_bind), 0, nil)
 
-    //test_model := glsl.mat4(1.0)
     for &voxel in engine.voxels{
 	vk.CmdPushConstants(command_buffer, app.graphics_pipeline_layout, {vk.ShaderStageFlag.VERTEX}, 0, size_of(glsl.mat4), raw_data(&voxel.model))
 
 	vk.CmdDrawIndexed(command_buffer, N_VOXEL_INDICES, 1, 0, 0, 0)
     }
-
-    /*
-    texture1_bind : [1]vk.DescriptorSet = {app.material_descriptor_sets[1]}
-    //cmdBindeDescSets() en los paramentros numericos, especifico primero desde donde y segundo la cantidad
-    //entonces puedo reemplazar solo el de las texturas diciendo el indice=1 y cantidad=1
-    vk.CmdBindDescriptorSets(command_buffer, vk.PipelineBindPoint.GRAPHICS, app.graphics_pipeline_layout,
-	1, 1, raw_data(&texture1_bind), 0, nil)
-
-    vk.CmdDrawIndexed(command_buffer, N_VOXEL_INDICES, 1, 0, 0, 0)
-    */
 
     vk.CmdEndRendering(command_buffer)
     transition_image_layout(app, app.swapchain_images[image_index], vk.Format.B8G8R8A8_SRGB,

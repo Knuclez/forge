@@ -16,7 +16,8 @@ Engine :: struct{
     projection_transform : glsl.mat4,
 
     //world
-    voxels : [N_ENGINE_VOXELS]Voxel,
+    map_chunks : [N_CHUNKS]MapChunk,
+    voxels : [N_VOXELS+1]Voxel,
 }
 
 
@@ -27,8 +28,8 @@ IdKey::struct{
 
 
 MapChunk::struct{
-    chunk_position : glsl.vec3,
-    data : [16][16][16]IdKey,
+    position : glsl.vec3,
+    data : [CHUNK_WIDTH][CHUNK_WIDTH][CHUNK_HEIGHT]IdKey,
 }
 
 

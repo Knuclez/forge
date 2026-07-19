@@ -16,16 +16,17 @@ MAX_FRAMES_IN_FLIGHT :: 1
 
 draw_frame::proc(engine : ^Engine, app : ^vkApplication, current_time : f32){
     vk.WaitForFences(app.device, 1 , &app.in_flight_fence, true, max(u64))
-    vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
     image_index : u32
     ani_res := vk.AcquireNextImageKHR(app.device, app.swapchain, max(u64),app.image_available_semaphore, {}, &image_index)
-    
+
     if ani_res == vk.Result.ERROR_OUT_OF_DATE_KHR || ani_res == vk.Result.SUBOPTIMAL_KHR {
 	fmt.println("swapchain out of date, recreating...")
 	recreate_swapchain(app)
 	return
-    }
+    } 
+
+    vk.ResetFences(app.device, 1, &app.in_flight_fence)
 
     vk.ResetCommandBuffer(app.draw_command_buffers[image_index], {})
     record_draw_command_buffer_dynamic(engine, app, app.draw_command_buffers[image_index], image_index)
@@ -554,6 +555,7 @@ create_surface::proc(app : ^vkApplication){
 choose_swapchain_image_extent::proc(app : ^vkApplication){
     capabilities : vk.SurfaceCapabilitiesKHR
     vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(app.physical_device, app.surface, &capabilities)
+    fmt.println("capabilities: ",capabilities.currentExtent)
 
     if capabilities.currentExtent.width != max(u32) {
 	app.swapchain_image_extent = capabilities.currentExtent
@@ -580,6 +582,7 @@ choose_swapchain_image_extent::proc(app : ^vkApplication){
         capabilities.maxImageExtent.height,
     )
 
+    fmt.println("extent ",extent)
     app.swapchain_image_extent = extent
 }
 
